@@ -1,0 +1,128 @@
+# ============================================================
+#  TASK: Auto "Thanh Nhai Thư" - Nghịch Thủy Hàn (bản Global)
+#  Theo flow: đăng nhập -> làm 4 hoạt động (chụp ảnh, mộng hoa lục,
+#  hảo cảm, nghề nghiệp) -> mở Thanh Nhai Thư -> roll tới khi đủ 4 NV
+#  -> nhận thưởng.
+# ------------------------------------------------------------
+#  ẢNH MẪU CẦN CHỤP (dùng nút "✂ Cắt ảnh mẫu" trong UI, lưu vào templates/):
+#    man_hinh_login.png   - màn hình đăng nhập (1 chi tiết đặc trưng)
+#    nut_dang_nhap.png    - nút Đăng nhập
+#    nut_vao_game.png     - nút vào game/tiếp tục sau đăng nhập (nếu có)
+#    hud_chinh.png        - 1 chi tiết LUÔN có ở màn hình chính trong game
+#                           (vd minimap/nút menu) -> dùng làm mốc "về màn chính"
+#    icon_chup_anh.png    - icon góc dưới bên trái để chụp ảnh
+#    nut_chup.png         - nút bấm chụp (màn chụp ảnh), nếu có
+#    icon_mong_hoa_luc.png- lối vào Mộng Hoa Lục
+#    nut_like.png         - nút Like bài viết
+#    icon_hao_cam.png     - mục Hảo Cảm
+#    nut_tang_qua.png     - nút Tặng quà
+#    nut_xacnhan.png      - nút xác nhận chung (đóng popup/ok), nếu có
+#    icon_nghe_nghiep.png - mục Nghề nghiệp
+#    nut_che_tao.png      - nút Chế tạo
+#    icon_thanh_nhai_thu.png - icon Thanh Nhai Thư
+#    nv_chup_anh.png / nv_mong_hoa_luc.png / nv_hao_huu.png / nv_nghe_nghiep.png
+#                         - hình nhiệm vụ MỤC TIÊU của từng ô (chụp icon/tên NV
+#                           khi ô ĐÃ ra đúng nhiệm vụ đó) -> dùng để biết khi nào dừng roll
+#    (Không cần nút roll riêng: bấm thẳng vào ô để roll. Toạ độ 4 ô đặt ở variables.)
+#    nut_nhan_thuong.png  - nút Nhận thưởng
+# ============================================================
+
+name: "Thanh Nhai Thư"
+description: "Auto đăng nhập + làm hoạt động + roll thanh nhai thư + nhận thưởng."
+package: ""        # để trống -> lấy game_package trong config.yaml
+repeat: 1
+
+# Toạ độ 4 ô nhiệm vụ trong bảng Thanh Nhai Thư (bấm để roll ô đó).
+#  Lấy toạ độ: mở UI -> chọn instance -> bấm vào giữa từng ô -> đọc x,y -> điền vào đây.
+variables:
+  o1_x: 0
+  o1_y: 0
+  o2_x: 0
+  o2_y: 0
+  o3_x: 0
+  o3_y: 0
+  o4_x: 0
+  o4_y: 0
+
+steps:
+  # ---------- ĐĂNG NHẬP / VÀO GAME ----------
+  - log: "Khởi động game..."
+  - launch: "{package}"
+  - wait_image: { image: "man_hinh_login.png", timeout: 120, required: true }
+  - find_tap: { image: "nut_dang_nhap.png", timeout: 30, required: true, after: 2 }
+  # qua bước chọn server / nhấn tiếp tục nếu game có
+  - if: { image: "nut_vao_game.png" }
+    then:
+      - tap_match: {}
+  - wait_image: { image: "hud_chinh.png", timeout: 180, required: true }
+  - log: "Đã vào game."
+
+  # ---------- 1) CHỤP ẢNH (góc dưới bên trái) ----------
+  - log: "Hoạt động: chụp ảnh"
+  - find_tap: { image: "icon_chup_anh.png", timeout: 20, after: 2 }
+  # nếu có nút bấm chụp riêng thì bấm; không có thì bỏ qua
+  - find_tap: { image: "nut_chup.png", timeout: 8, after: 1.5 }
+  - if: { image: "nut_xacnhan.png" }
+    then: [ { tap_match: {} }, { sleep: 1 } ]
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- 2) MỘNG HOA LỤC -> LIKE ----------
+  - log: "Hoạt động: mộng hoa lục - like"
+  - find_tap: { image: "icon_mong_hoa_luc.png", timeout: 20, after: 2 }
+  - find_tap: { image: "nut_like.png", timeout: 15, after: 1.5 }
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- 3) HẢO CẢM -> TẶNG QUÀ ----------
+  - log: "Hoạt động: hảo cảm - tặng quà"
+  - find_tap: { image: "icon_hao_cam.png", timeout: 20, after: 2 }
+  - find_tap: { image: "nut_tang_qua.png", timeout: 15, after: 1.5 }
+  - if: { image: "nut_xacnhan.png" }
+    then: [ { tap_match: {} }, { sleep: 1 } ]
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- 4) NGHỀ NGHIỆP -> CHẾ TẠO ----------
+  - log: "Hoạt động: nghề nghiệp - chế tạo"
+  - find_tap: { image: "icon_nghe_nghiep.png", timeout: 20, after: 2 }
+  - find_tap: { image: "nut_che_tao.png", timeout: 15, after: 1.5 }
+  - if: { image: "nut_xacnhan.png" }
+    then: [ { tap_match: {} }, { sleep: 1 } ]
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- THANH NHAI THƯ: ROLL TỚI KHI ĐỦ 4 NV ----------
+  - log: "Mở Thanh Nhai Thư..."
+  - find_tap: { image: "icon_thanh_nhai_thu.png", timeout: 20, required: true, after: 2 }
+  # Roll TỪNG Ô: bấm vào ô tới khi nó ra đúng nhiệm vụ mong muốn.
+  - log: "Roll ô 1 -> chụp ảnh"
+  - loop: { until_image: "nv_chup_anh.png", max: 40 }
+    steps:
+      - tap: { x: "{o1_x}", y: "{o1_y}" }
+      - sleep: 1
+
+  - log: "Roll ô 2 -> mộng hoa lục"
+  - loop: { until_image: "nv_mong_hoa_luc.png", max: 40 }
+    steps:
+      - tap: { x: "{o2_x}", y: "{o2_y}" }
+      - sleep: 1
+
+  - log: "Roll ô 3 -> hảo hữu"
+  - loop: { until_image: "nv_hao_huu.png", max: 40 }
+    steps:
+      - tap: { x: "{o3_x}", y: "{o3_y}" }
+      - sleep: 1
+
+  - log: "Roll ô 4 -> nghề nghiệp"
+  - loop: { until_image: "nv_nghe_nghiep.png", max: 40 }
+    steps:
+      - tap: { x: "{o4_x}", y: "{o4_y}" }
+      - sleep: 1
+
+  - log: "Đã roll đủ 4 nhiệm vụ."
+
+  # ---------- NHẬN THƯỞNG ----------
+  - loop: { times: 8, while_image: "nut_nhan_thuong.png" }
+    steps:
+      - find_tap: { image: "nut_nhan_thuong.png", timeout: 6 }
+      - sleep: 1
+      - if: { image: "nut_xacnhan.png" }
+        then: [ { tap_match: {} }, { sleep: 1 } ]
+  - log: "Xong Thanh Nhai Thư!"

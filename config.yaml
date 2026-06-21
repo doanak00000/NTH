@@ -1,0 +1,40 @@
+# ============================================================
+#  Cấu hình chung cho NTH Bot
+#  (Sửa file này 1 lần cho khớp máy của bạn)
+# ============================================================
+
+# Đường dẫn tới adb.
+#  - Trên Windows + LDPlayer: dùng adb đi kèm LDPlayer cho chắc ăn, ví dụ:
+#       adb_path: "C:/LDPlayer/LDPlayer9/adb.exe"
+#  - Để trống / "adb" nếu adb đã có trong PATH.
+adb_path: "adb"
+
+# Đường dẫn ldconsole.exe của LDPlayer (dùng để tự dò các instance).
+#  Thường là: C:/LDPlayer/LDPlayer9/ldconsole.exe
+#  Để trống nếu bạn muốn tự khai báo cổng ở mục devices bên dưới.
+ldconsole_path: "C:/LDPlayer/LDPlayer9/ldconsole.exe"
+
+# Package name của game (Nghịch Thủy Hàn).
+#  ⚠️ Bản GLOBAL khác bản CHINA -> phải tự dò trên máy bạn, đừng đoán.
+#  Cách lấy (mở game tới màn hình chính rồi chạy 1 trong 2):
+#     python run_cli.py --detect-package
+#     adb -s 127.0.0.1:5555 shell pm list packages | findstr -i netease
+#  rồi dán package vào đây.
+game_package: ""
+
+# Thư mục chứa ảnh mẫu và task
+templates_dir: "templates"
+tasks_dir: "tasks"
+
+# Thiết bị thủ công (chỉ dùng khi KHÔNG dùng ldconsole tự dò).
+#  Mỗi dòng là 1 instance. serial là "host:port" của adb.
+manual_devices:
+  # - { name: "Máy 1", serial: "127.0.0.1:5555" }
+  # - { name: "Máy 2", serial: "127.0.0.1:5557" }
+
+# Thông số mặc định cho nhận diện ảnh
+vision:
+  confidence: 0.85   # ngưỡng khớp (0-1). Cao = khắt khe hơn.
+  # Khi ảnh mẫu chụp ở độ phân giải khác với máy đang chạy,
+  # bật scaling để khớp đa kích thước (chậm hơn chút).
+  multi_scale: false
