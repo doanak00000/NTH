@@ -1545,6 +1545,7 @@ def treo_to(ctx, ban_reg=(150, 90, 270, 350), max_treo=8, so_luong=599, so_lan_g
             ctx.sleep(0.4)
         if day:
             ctx.log("treo_to: kệ đã đầy 8 ô")
+            ctx.ghi_phieu("kệ đầy", True)    # web hiện 'treo x/8 ô (kệ đầy)'
             ctx.device.tap(921, 120)         # X đóng bảng bán
             ctx.sleep(1)
             break
