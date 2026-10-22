@@ -178,7 +178,8 @@ def ghi_trang_thai(accs: list[dict], log=print):
                               "gio": a["gio"], "lenh": da_ap.get(a["user"], ""),   # giờ hẹn + id lệnh web đã nhận
                               # nhân vật làm hôm nay + bước lỗi (phiếu kết quả) -> web hiện ✓ / ⚠ từng nhân vật
                               "nhan_vat": [{"ten": t, "luc": datetime.fromtimestamp(p["luc"]).strftime("%H:%M"),
-                                            "loi": loi, "treo": p.get("treo")}   # số ô treo được (không tính lần kệ đầy)
+                                            "loi": loi, "treo": p.get("treo"),   # số ô treo được (không tính lần kệ đầy)
+                                            "het_to": bool(p.get("hết tơ"))}     # treo thiếu vì túi hết tơ
                                            for t, p, loi in phieu_hom_nay(a)]}
         if moi == cu:
             return

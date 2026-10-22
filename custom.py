@@ -1502,7 +1502,16 @@ def treo_to(ctx, ban_reg=(150, 90, 270, 350), max_treo=8, so_luong=599, so_lan_g
     treo = 0
     for _ in range(int(max_treo)):
         th = tim_hang()
+        if th is None:                       # có thể túi bị che (màn chờ/popup) chứ chưa hết hàng -> thử lại 1 lần
+            m = ctx.find("man_cho.png")
+            if m.found:
+                ctx.device.tap(m.x, m.y)
+                ctx.sleep(2)
+            th = tim_hang()
         if th is None:
+            ctx.log(f"treo_to: hết tơ trong túi (đã treo {treo})")
+            if treo < int(max_treo):         # web hiện 'treo x/8 ô (hết tơ)'
+                ctx.ghi_phieu("hết tơ", True, loi=True)   # chụp túi: TrânCẩm 22/10 bị báo hết dù còn tơ
             break
         img, xy = th
         ctx.device.tap(*xy)
@@ -1525,6 +1534,8 @@ def treo_to(ctx, ban_reg=(150, 90, 270, 350), max_treo=8, so_luong=599, so_lan_g
             ctx.device.tap(685, 320)         # - đơn giá (dừng ở sàn -50% = min giá)
             ctx.sleep(0.35)
         if not _find_tap(ctx, "len_ke.png", 5, 0, required=False):
+            ctx.log(f"treo_to: không thấy nút Lên kệ (đã treo {treo})")
+            ctx.ghi_phieu("treo dừng sớm", treo, loi=True)
             break
         day = False
         for _ in range(4):                   # thông báo hiện thoáng qua ngay sau khi bấm -> chụp dày ~1.5s
@@ -1540,10 +1551,11 @@ def treo_to(ctx, ban_reg=(150, 90, 270, 350), max_treo=8, so_luong=599, so_lan_g
         treo += 1
         if img != "to_phieu_van.png":
             thuoc_da_treo.add(img)
-        ctx.sleep(1.5)                       # chờ bảng bán đóng, túi cập nhật
-        if float(gian_cach or 0) > 0 and tim_hang() is not None:
-            ctx.log(f"treo_to: chờ {float(gian_cach):.0f}s rồi treo ô tiếp theo")
-            ctx.sleep(float(gian_cach))
+        ctx.sleep(3)                         # chờ bảng bán đóng, túi cập nhật (1.5s chưa kịp: còn thấy xấp vừa treo)
+        cho = float(gian_cach or 0) - 3      # 3s trên đã tính vào giãn cách (30 -> chờ thêm 27)
+        if cho > 0 and tim_hang() is not None:
+            ctx.log(f"treo_to: chờ {cho:.0f}s rồi treo ô tiếp theo")
+            ctx.sleep(cho)
             m = ctx.find("man_cho.png")      # chờ lâu -> game nhả màn chờ, che mất túi đồ
             if m.found:
                 ctx.log("treo_to: màn chờ -> chạm để thoát")

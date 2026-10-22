@@ -80,13 +80,14 @@ class Context:
     # ---- tiện ích -------------------------------------------------------
     def ghi_phieu(self, buoc: str, gia_tri, loi: bool = False):
         """Phiếu kết quả của nhân vật đang làm: buoc -> 'failed' / '3/4' / số lần... (doi_acc lưu vào kho lúc xong
-        nhân vật -> UI, web, báo cáo). loi=True -> chụp màn hình logs/phieu_<giờ>_<bước>.png để xem nguyên nhân sau."""
+        nhân vật -> UI, web, báo cáo). loi=True -> chụp màn hình logs/phieu_<giờ>_<nhân vật>_<bước>.png để xem nguyên nhân sau."""
         self.variables.setdefault("_phieu", {})[buoc] = gia_tri
         if loi:
             try:
                 from .orchestrator import app_dir
                 from .vision import imwrite_unicode
-                ten = time.strftime("phieu_%Y%m%d_%H%M%S_") + re.sub(r"\W+", "_", buoc) + ".png"
+                nv = self.variables.get("_ten_nv") or f"nv{int(self.variables.get('_acc_idx', 0) or 0) + 1}"
+                ten = time.strftime("phieu_%Y%m%d_%H%M%S_") + re.sub(r"\W+", "_", f"{nv}_{buoc}") + ".png"
                 imwrite_unicode(os.path.join(app_dir(), "logs", ten), self.capture())
             except Exception:  # noqa: BLE001 - chụp lỗi không được làm hỏng bước chính
                 pass
