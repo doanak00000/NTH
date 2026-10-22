@@ -1543,6 +1543,11 @@ def treo_to(ctx, ban_reg=(150, 90, 270, 350), max_treo=8, so_luong=599, so_lan_g
                 day = True
                 break
             ctx.sleep(0.4)
+        if not day:                          # lỡ mất thông báo (22/10: gỡ 2 mà đếm treo 8) -> lên kệ được thì bảng
+            ctx.sleep(1)                     # bán tự đóng; còn nút Lên kệ = không lên được
+            if ctx.find("len_ke.png").found:
+                ctx.log("treo_to: bảng bán chưa đóng -> coi như kệ đầy")
+                day = True
         if day:
             ctx.log("treo_to: kệ đã đầy 8 ô")
             ctx.ghi_phieu("kệ đầy", True)    # web hiện 'treo x/8 ô (kệ đầy)'
@@ -1552,7 +1557,7 @@ def treo_to(ctx, ban_reg=(150, 90, 270, 350), max_treo=8, so_luong=599, so_lan_g
         treo += 1
         if img != "to_phieu_van.png":
             thuoc_da_treo.add(img)
-        ctx.sleep(3)                         # chờ bảng bán đóng, túi cập nhật (1.5s chưa kịp: còn thấy xấp vừa treo)
+        ctx.sleep(2)                         # + 1s lúc kiểm tra bảng bán đóng = 3s chờ túi cập nhật
         cho = float(gian_cach or 0) - 3      # 3s trên đã tính vào giãn cách (30 -> chờ thêm 27)
         if cho > 0 and tim_hang() is not None:
             ctx.log(f"treo_to: chờ {cho:.0f}s rồi treo ô tiếp theo")
