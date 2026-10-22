@@ -113,14 +113,56 @@ def find_template(
 
 
 # ---- OCR (tuỳ chọn, cần cài Tesseract + pytesseract) --------------------
-def ocr_text(screen: np.ndarray, region: tuple[int, int, int, int] | None = None) -> str:
+_TESSERACT_PATHS = [
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+]
+
+
+def _load_pytesseract():
+    """Nạp pytesseract và tự trỏ tới tesseract.exe nếu chưa có trong PATH."""
     try:
         import pytesseract
     except ImportError:
         raise RuntimeError("OCR cần: pip install pytesseract + cài Tesseract-OCR.")
-    img = screen
-    if region:
-        x, y, w, h = region
-        img = screen[y:y + h, x:x + w]
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    return pytesseract.image_to_string(gray).strip()
+    import shutil
+    cmd = pytesseract.pytesseract.tesseract_cmd
+    if not (cmd and (os.path.exists(cmd) or shutil.which(cmd))):
+        for p in _TESSERACT_PATHS:
+            if os.path.exists(p):
+                pytesseract.pytesseract.tesseract_cmd = p
+                break
+    return pytesseract
+
+
+def _crop(screen: np.ndarray, region):
+    if not region:
+        return screen
+    x, y, w, h = region
+    return screen[y:y + h, x:x + w]
+
+
+def ocr_text(screen: np.ndarray, region: tuple[int, int, int, int] | None = None,
+             config: str = "") -> str:
+    """Đọc chữ trong screen (hoặc 1 vùng region=(x,y,w,h))."""
+    pytesseract = _load_pytesseract()
+    gray = cv2.cvtColor(_crop(screen, region), cv2.COLOR_BGR2GRAY)
+    return pytesseract.image_to_string(gray, config=config).strip()
+
+
+def ocr_number(screen: np.ndarray, region: tuple[int, int, int, int] | None = None,
+               whitelist: str = "0123456789", psm: int = 7,
+               scale: int = 3, invert: bool = False) -> str:
+    """Đọc CHỮ SỐ trong 1 vùng. Trả chuỗi (vd '12/20', '350'); '' nếu không đọc được.
+
+    Tiền xử lý: cắt vùng -> xám -> phóng to -> nhị phân hoá (Otsu) -> Tesseract
+    với whitelist chỉ ký tự số (loại nhiễu chữ). invert=True nếu chữ sáng trên nền tối.
+    """
+    pytesseract = _load_pytesseract()
+    gray = cv2.cvtColor(_crop(screen, region), cv2.COLOR_BGR2GRAY)
+    if scale and scale != 1:
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    flag = cv2.THRESH_BINARY_INV if invert else cv2.THRESH_BINARY
+    _, th = cv2.threshold(gray, 0, 255, flag + cv2.THRESH_OTSU)
+    cfg = f"--psm {psm} -c tessedit_char_whitelist={whitelist}"
+    return pytesseract.image_to_string(th, config=cfg).strip()

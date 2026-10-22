@@ -1,0 +1,140 @@
+# ============================================================
+#  TASK: Thanh Nhai Thư — CHẠY 6 ACC liên tiếp
+# ------------------------------------------------------------
+#  Flow: mỗi instance lấy 1 acc chưa chạy trong kho "Tài khoản Zing" (UI), đăng nhập ->
+#        làm Thanh Nhai Thư cho acc đó -> ĐỔI sang acc kế tiếp ->
+#        làm tiếp -> ... đủ 6 acc.
+#
+#  Cơ chế: dùng `repeat` của task (lặp cả task). Biến ctx được giữ qua các vòng
+#  nên doi_acc tự nhớ đang ở acc thứ mấy:
+#     vòng 1: TNT(acc1 đã login) -> đổi sang acc2
+#     vòng 2: TNT(acc2)          -> đổi sang acc3
+#     ...
+#     vòng 6: TNT(acc6)          -> hết slot -> đánh ✓ tk Zing này trong kho
+#     vòng 7: nhan_acc lấy tk Zing chưa chạy tiếp theo -> lại 6 nhân vật; kho hết -> dừng.
+#
+#  MỖI NHÂN VẬT: đóng banner -> chụp ảnh -> mộng hoa lục (like/unlike) -> hảo cảm (tặng quà)
+#    -> du ngoạn (nhận hộp quà) -> chế tơ -> Thanh Nhai Thư -> chế tơ lần 2 (TNT cho thêm
+#    hoạt lực) -> treo bán tơ (gỡ tơ hết hạn, treo lại; min giá, 599/ô) -> đổi nhân vật.
+#  Đổi acc 5,6 phải CUỘN list (keo_that). Toạ độ/luồng đổi acc xem hàm doi_acc trong custom.py.
+#  Banner quảng cáo mới bot không đóng được: cắt sát nút X, lưu tên 'x_....png' (xem dong_banner).
+# ============================================================
+
+name: "Thanh Nhai Thư 6 acc"
+description: "Mỗi nhân vật: nhiệm vụ + chế tơ + Thanh Nhai Thư + treo bán tơ; tự đổi nhân vật và tk Zing."
+package: ""
+repeat: 0           # 0 = chạy tới khi kho "Tài khoản Zing" hết acc chưa chạy.
+
+# Toạ độ TÂM 5 nút roll trong trang Thanh Nhai Thư.
+variables:
+  gian_cach_treo: 30  # giây chờ giữa 2 lần treo tơ (UI 'Giãn cách treo' ghi đè khi Start)
+  r1_x: 395
+  r1_y: 298
+  r2_x: 513
+  r2_y: 298
+  r3_x: 634
+  r3_y: 298
+  r4_x: 756
+  r4_y: 298
+  r5_x: 877
+  r5_y: 298
+
+steps:
+  # Mở game nếu chưa mở (LDPlayer đã được tool tự bật khi bấm Start), chờ qua màn loading.
+  - python: { func: khoi_dong_game }
+
+  # Lấy acc CHƯA CHẠY trong kho "Tài khoản Zing" (UI) + đăng nhập. Đang chạy dở acc thì bỏ qua.
+  # Kho hết acc -> task tự kết thúc.
+  - python: { func: nhan_acc, tu_duoi: true }   # nhân vật đầu cũng cuộn xuống chọn dòng cuối
+
+  # ========================================================
+  #  PHẦN A — VIỆC HẰNG NGÀY CHO NHÂN VẬT HIỆN TẠI
+  # ========================================================
+
+  # ---------- 0) DỌN MÀN HÌNH ----------
+  # Vào nhân vật xong game hay bật trễ ~3s trang "Nội Dung Mới"/banner -> chờ rồi đóng hết (back + X).
+  - sleep: 3
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- 1) CHỤP ẢNH ----------
+  # Nhiệm vụ nhỏ (chụp ảnh, hảo cảm): không thấy nút thì bỏ qua làm tiếp, không dừng cả task.
+  - log: "Hoạt động: chụp ảnh"
+  # máy ảnh -> chụp (game bỏ qua lần bấm chụp thì tự bấm lại) -> xong -> thoát
+  - python: { func: chup_anh }
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- 2) MỘNG HOA LỤC (bấm like 2 lần: 1 like + 1 unlike) ----------
+  # xã giao (319,498) -> tab (30,122) -> nút like (dò ảnh, kiểm tra mỗi lần bấm nút đổi trạng thái) -> thu (632,240)
+  - log: "Hoạt động: mộng hoa lục"
+  - python: { func: mong_hoa_luc }
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- 3) HẢO CẢM ----------
+  - log: "Hoạt động: hảo cảm (tặng quà)"
+  # Hoạt động -> Hảo Cảm -> Tương Hội -> người -> quà -> Tặng (-> Xác Nhận nếu hảo cảm đầy); Thanh Nhai Thư thấy
+  #  sót thì gọi lại đúng hàm này
+  - python: { func: hao_cam }
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- 4) DU NGOẠN: nhận hộp quà góc phải dưới ----------
+  - log: "Hoạt động: du ngoạn"
+  - python: { func: mo_hoat_dong }      # mở bảng Hoạt động (tự bấm lại nếu game bỏ qua)
+  - tap: { x: 595, y: 285, jitter: 1 }     # ô Du Ngoạn
+  - sleep: 3
+  - tap: { x: 715, y: 445, jitter: 1 }     # hộp quà 'Nhận phần thưởng'
+  - sleep: 2.5
+  - tap: { x: 480, y: 450, jitter: 1 }     # 'nhấn vào chỗ trống để đóng'
+  - sleep: 1.5
+  - tap: { x: 45, y: 30, jitter: 0 }       # thoát Du Ngoạn
+  - sleep: 1.5
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- 5) CHẾ TƠ (Thiết Kế > Tơ Phiêu Vân-2 dòng 3; mua đá vàng vừa đủ theo hoạt lực) ----------
+  - log: "Chế tơ (lần 1)"
+  - python: { func: che_to }
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- THANH NHAI THƯ: ROLL 5 Ô TỚI KHI ĐỦ 4 Ô ĐÃ LÀM, RỒI NHẬN THƯỞNG 1 LẦN (4 MỐC) ----------
+  - log: "Mở Thanh Nhai Thư..."
+  - find_tap: { image: "thanh_nhai_thu.png", timeout: 20, required: true, after: 4 }
+  - python:
+      func: roll_thanh_nhai_thu
+      image: "roll_thanh_nhai_thu.png"
+      target: 4
+      region: 100
+      cho: 1.5
+      positions:
+        - ["{r1_x}", "{r1_y}"]
+        - ["{r2_x}", "{r2_y}"]
+        - ["{r3_x}", "{r3_y}"]
+        - ["{r4_x}", "{r4_y}"]
+        - ["{r5_x}", "{r5_y}"]
+  # Bấm 4 ô đã trúng ở trên (roll_thanh_nhai_thu) = cộng điểm hoạt động -> rồi nhận 4 mốc
+  #  20/40/60/80 "Tiến Độ Hoạt Động Ngày" ở hàng dưới (mỗi mốc +100 hoạt lực cho chế tơ lần 2)
+  - log: "Nhận thưởng Thanh Nhai Thư (4 mốc)..."
+  - python: { func: nhan_moc_hoat_dong }
+  - log: "Xong Thanh Nhai Thư!"
+  - python: { func: ve_man_hinh_chinh }
+
+  # ---------- CHẾ TƠ LẦN 2 (Thanh Nhai Thư cho thêm hoạt lực) + TREO BÁN ----------
+  #  Vào chợ ĐƯỜNG VÒNG từ trang chế (đá vàng > Cách nhận > Khu Giao Dịch), KHÔNG bấm icon Kỳ Trân.
+  - log: "Chế tơ (lần 2)"
+  - python: { func: che_to }
+  - log: "Treo bán tơ"
+  - python: { func: treo_to, gian_cach: "{gian_cach_treo}" }   # gỡ hàng hết hạn -> treo Thanh Phong Tán, Hồi Sinh Tán rồi tơ; min giá, 599/ô
+
+  # ========================================================
+  #  PHẦN B — ĐỔI SANG ACC KẾ TIẾP (rồi repeat lặp lại PHẦN A)
+  # ========================================================
+  - python:
+      func: doi_acc
+      zing: true     # hết 6 nhân vật -> đánh ✓ tk Zing này, vòng sau nhan_acc lấy acc mới
+      tu_duoi: true  # luôn chọn DÒNG CUỐI (nhân vật lâu chưa chơi nhất; vừa chơi thì nhảy lên đầu list)
+      # Mặc định: mỗi action giãn >=10s, chờ list nhân vật & vào game 60s,
+      #  scroll acc 5/6 bằng keo_that (kéo thật) — đã kiểm chứng.
+      slots:
+        - [139, 202]          # acc 2
+        - [176, 290]          # acc 3
+        - [164, 369]          # acc 4 (dòng 4 chỉ hiện 1 phần: y 358-381)
+        - { x: 109, y: 233, scroll: 1 }   # acc 5 (TrangQuangVũ): cuộn 1 lần rồi tap (109,233)
+        - { x: 119, y: 322, scroll: 1 }   # acc 6 (TháiSơnVũ):   cuộn 1 lần rồi tap (119,322)

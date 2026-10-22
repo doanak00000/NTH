@@ -1,0 +1,30 @@
+# ============================================================
+#  TASK: Quét xu — CHỈ đọc xu từng nhân vật rồi đẩy lên web (không chế tơ / treo bán)
+# ------------------------------------------------------------
+#  Giống "Thanh Nhai Thư 6 acc": lấy acc được tick + chưa chạy trong kho, đi đủ 6 nhân vật,
+#  mỗi nhân vật vào chợ (Vật Phẩm Bán) đọc xu -> web https://doanak00000.github.io/nth-xu/
+#  Muốn quét lại acc đã ✓ hôm nay: bấm '↺ Reset trạng thái' trên UI trước khi Start.
+# ============================================================
+
+name: "Quét xu 6 acc"
+description: "Mỗi nhân vật: vào chợ đọc xu + tiền chưa rút, đẩy lên web; tự đổi nhân vật và tk Zing."
+package: ""
+repeat: 0           # 0 = chạy tới khi kho "Tài khoản Zing" hết acc chưa chạy.
+
+steps:
+  - python: { func: khoi_dong_game }
+  - python: { func: nhan_acc, tu_duoi: true }   # nhân vật đầu cũng cuộn xuống chọn dòng cuối
+  - sleep: 3
+  - python: { func: ve_man_hinh_chinh }
+  - log: "Quét xu"
+  - python: { func: quet_xu }
+  - python:
+      func: doi_acc
+      zing: true
+      tu_duoi: true  # luôn chọn dòng cuối (như thanh_nhai_thu_6acc.yaml)
+      slots:              # giống thanh_nhai_thu_6acc.yaml
+        - [139, 202]
+        - [176, 290]
+        - [164, 369]
+        - { x: 109, y: 233, scroll: 1 }
+        - { x: 119, y: 322, scroll: 1 }

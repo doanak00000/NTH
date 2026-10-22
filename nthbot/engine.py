@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import random
 import re
 import threading
 import time
@@ -44,6 +45,14 @@ class Stopped(Exception):
     """Người dùng bấm Stop -> dừng sạch sẽ."""
 
 
+class TaskDone(Exception):
+    """custom.py báo đã làm xong hết (vd hết tài khoản) -> kết thúc task như hoàn tất."""
+
+
+class BoQuaAcc(Exception):
+    """Bước lỗi, Claude cứu không được -> BotRunner bỏ qua tk Zing đang làm, sang tk kế (không dừng máy)."""
+
+
 _VAR_RE = re.compile(r"\{([a-zA-Z0-9_]+)\}")
 
 
@@ -62,15 +71,37 @@ class Context:
     custom_funcs: dict[str, Callable] = field(default_factory=dict)
 
     last_match: Match = field(default_factory=lambda: Match(found=False))
+    tien_trien: float = field(default_factory=time.time)   # lần cuối có tiến triển (watchdog đọc)
+    # bước lỗi (đã thử đóng banner) -> cuu_loi(step, loi): True = đã xử lý, làm lại bước; False = chịu (BotRunner gắn)
+    cuu_loi: Callable[[dict, Exception], bool] | None = None
+    # cứu tự động vẫn chịu -> cho_claude(step, loi): chờ Claude phiên /nth điều khiển tay -> "LAM_LAI" | "TIEP" | "BO_QUA"
+    cho_claude: Callable[[dict, Exception], str] | None = None
 
     # ---- tiện ích -------------------------------------------------------
+    def ghi_phieu(self, buoc: str, gia_tri, loi: bool = False):
+        """Phiếu kết quả của nhân vật đang làm: buoc -> 'failed' / '3/4' / số lần... (doi_acc lưu vào kho lúc xong
+        nhân vật -> UI, web, báo cáo). loi=True -> chụp màn hình logs/phieu_<giờ>_<bước>.png để xem nguyên nhân sau."""
+        self.variables.setdefault("_phieu", {})[buoc] = gia_tri
+        if loi:
+            try:
+                from .orchestrator import app_dir
+                from .vision import imwrite_unicode
+                ten = time.strftime("phieu_%Y%m%d_%H%M%S_") + re.sub(r"\W+", "_", buoc) + ".png"
+                imwrite_unicode(os.path.join(app_dir(), "logs", ten), self.capture())
+            except Exception:  # noqa: BLE001 - chụp lỗi không được làm hỏng bước chính
+                pass
+
     def check_stop(self):
         if self.stop_event.is_set():
             raise Stopped()
 
     def sleep(self, seconds: float):
-        """Ngủ nhưng vẫn phản hồi nút Stop."""
+        """Ngủ nhưng vẫn phản hồi nút Stop. Tự cộng thêm 0-10% ngẫu nhiên để nhịp không cố định
+        (chỉ cộng, không trừ: nhiều chỗ cần chờ tối thiểu, vd hiệu ứng list nhân vật ~3.5s)."""
+        seconds *= random.uniform(1.0, 1.1)
         end = time.time() + seconds
+        if seconds >= 10:                    # cố ý chờ lâu (vd giãn cách treo) -> không phải kẹt
+            self.tien_trien = max(self.tien_trien, end)
         while time.time() < end:
             self.check_stop()
             time.sleep(min(0.1, max(0, end - time.time())))
@@ -405,9 +436,50 @@ def run_step(step: dict, ctx: Context):
     return HANDLERS[action](step[action], step, ctx)
 
 
-def run_steps(steps: list, ctx: Context):
+def run_steps(steps: list, ctx: Context, so_lan_cuu: int = 2):
+    from .adb import AdbError
     for step in steps:
-        run_step(step, ctx)
+        lan = cuu = adb = cho = 0
+        while True:
+            try:
+                run_step(step, ctx)
+                break
+            except (Stopped, TaskDone, BoQuaAcc):
+                raise
+            except AdbError as e:
+                # adb server khởi động lại / rớt kết nối (gặp 19/10) -> lỗi máy, không phải lỗi tk: nối lại rồi làm lại
+                if adb >= 3:
+                    raise
+                adb += 1
+                ctx.log(f"adb rớt kết nối ({str(e)[:80]}) -> chờ 5s, nối lại, làm lại bước (lần {adb}/3)")
+                ctx.sleep(5)
+                try:
+                    ctx.device.connect()
+                except Exception:  # noqa: BLE001 - lần thử sau sẽ báo lỗi lại
+                    pass
+            except Exception as e:  # noqa: BLE001
+                # bước lỗi thường do banner/popup che -> đóng được banner thì làm lại bước đó
+                dong = ctx.custom_funcs.get("dong_banner")
+                # dò ảnh mẫu X; không mẫu nào khớp thì hỏi Claude (banner lạ)
+                if isinstance(e, StepError) and lan < 2 and dong is not None and dong(ctx, hoi_claude=True):
+                    lan += 1
+                    ctx.log("Bước bị banner che -> đã đóng banner, làm lại bước")
+                    continue
+                if ctx.cuu_loi is None:
+                    raise
+                # Claude xem màn hình, chọn 1 thao tác an toàn rồi làm lại bước; hết lượt / Claude chịu -> bỏ qua tk
+                if cuu < so_lan_cuu and ctx.cuu_loi(step, e):
+                    cuu += 1
+                    ctx.log(f"Claude đã xử lý -> làm lại bước (lần cứu {cuu}/{so_lan_cuu})")
+                    continue
+                # vẫn chịu -> dừng chờ Claude (phiên /nth) điều khiển LDPlayer, đừng bỏ cả acc; tối đa 3 lần mỗi bước
+                kq = ctx.cho_claude(step, e) if ctx.cho_claude is not None and cho < 3 else "BO_QUA"
+                cho += 1
+                if kq == "LAM_LAI":
+                    continue
+                if kq == "TIEP":             # Claude đã tự làm xong bước này -> đi bước sau
+                    break
+                raise BoQuaAcc(str(e)) from e
 
 
 def load_custom_funcs(path: str) -> dict[str, Callable]:

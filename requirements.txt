@@ -1,6 +1,6 @@
 opencv-python>=4.9
 numpy>=1.26
 PyYAML>=6.0
-PySide6>=6.6
+PySide6>=6.7,<6.10   # 6.10+ bỏ hỗ trợ Python 3.9
 # Tuỳ chọn cho OCR (đọc chữ/số trong game). Cần cài Tesseract riêng nếu dùng.
-# pytesseract>=0.3.10
+pytesseract>=0.3.10

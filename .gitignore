@@ -2,3 +2,13 @@
 __pycache__/
 *.pyc
 debug_shot.png
+accounts.yaml
+accounts.yaml.tmp
+banner_moi/
+logs/
+xu_web/
+debug_tnt/
+debug_tnt_*/
+debug_scroll/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

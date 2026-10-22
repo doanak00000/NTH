@@ -12,7 +12,7 @@ có **UI desktop**, và các bước bot khai báo bằng **file YAML dễ sửa
 
 ## 1. Cài đặt (trên Windows)
 
-1. Cài **Python 3.10+**: https://www.python.org/downloads/ (nhớ tick *Add Python to PATH*).
+1. Cài **Python 3.9+**: https://www.python.org/downloads/ (nhớ tick *Add Python to PATH*).
 2. Cài **LDPlayer 9** và tạo các instance, cài sẵn game vào.
 3. Mở **PowerShell/CMD** tại thư mục tool rồi chạy:
    ```bat
@@ -24,16 +24,20 @@ p
 ```yaml
 adb_path: "C:/LDPlayer/LDPlayer9/adb.exe"          # adb đi kèm LDPlayer
 ldconsole_path: "C:/LDPlayer/LDPlayer9/ldconsole.exe"  # để tự dò instance
-game_package: "com.netease.nshm"                    # package game (xem cách lấy bên dưới)
+game_package: "vng.game.nth"                        # package game (xem cách lấy bên dưới)
 ```
 
-**Lấy package name của game:** mở 1 instance có game, rồi:
+**Lấy package name của game:** mở 1 instance có game, rồi liệt kê app đã cài (`-3` = chỉ app người dùng):
 ```bat
-C:/LDPlayer/LDPlayer9/adb.exe -s 127.0.0.1:5555 shell pm list packages | findstr nshm
+C:/LDPlayer/LDPlayer9/adb.exe devices
+C:/LDPlayer/LDPlayer9/adb.exe -s emulator-5554 shell pm list packages -3
 ```
-Dán kết quả (vd `com.netease.nshm`) vào `game_package`.
+Tìm dòng giống tên game rồi dán vào `game_package`. Bản **VNG (Việt Nam)** là `vng.game.nth`;
+bản China/Global có thể khác (vd `com.netease.nshm`) → **tự dò trên máy bạn, đừng đoán**.
 
-> LDPlayer mở cổng ADB theo công thức `5555 + index*2` (instance 0→5555, 1→5557, ...).
+> Lưu ý serial: LDPlayer thường hiện thiết bị dạng `emulator-5554`, `emulator-5556`, ... trong
+> `adb devices` (không phải `127.0.0.1:5555`). Dùng đúng serial mà `adb devices` in ra.
+> Cổng ADB theo công thức `5555 + index*2` (instance 0→5555, 1→5557, ...).
 > Tool tự dò qua `ldconsole`; nếu không dùng ldconsole, khai báo tay ở `manual_devices`.
 
 ## 3. Chạy
@@ -49,8 +53,8 @@ python run.py
 **Dòng lệnh (chạy nền/không UI):**
 ```bat
 python run_cli.py --list-devices
-python run_cli.py --task thanh_nhai_thu.yaml
-python run_cli.py --task thanh_nhai_thu.yaml --device 127.0.0.1:5555
+python run_cli.py --task thanh_nhai_thu_6acc.yaml
+python run_cli.py --task thanh_nhai_thu_6acc.yaml --device 127.0.0.1:5555
 ```
 
 ---
@@ -124,7 +128,7 @@ Khi cần logic phức tạp (đọc số liệu, điều kiện đặc biệt),
 
 ## 6. Task mẫu "Thanh Nhai Thư"
 
-File `tasks/thanh_nhai_thu.yaml` là **khung mẫu** — cần bạn:
+File `tasks/thanh_nhai_thu_6acc.yaml` là **khung mẫu** — cần bạn:
 1. Tạo các template được nhắc tới trong file (`man_hinh_chinh.png`, `nut_nhiem_vu.png`,
    `muc_thanh_nhai_thu.png`, `nut_nhan_thu.png`, `nut_giao_thu.png`, ...).
 2. Chỉnh lại thứ tự bước/toạ độ cho khớp giao diện game thật.
@@ -163,3 +167,10 @@ nthbot/
   orchestrator.py        # điều phối nhiều máy
   ui/app.py              # giao diện desktop
 ```
+
+## Chạy nhiều tài khoản Zing
+
+1. Bấm **👤 Tài khoản Zing** trong UI → thêm tk/mk vào kho acc (dùng chung cho mọi instance) → Lưu.
+2. Cắt các ảnh mẫu đăng nhập Zing (danh sách ở đầu `tasks/thanh_nhai_thu_6acc.yaml`).
+3. Tick các instance, chạy **Thanh Nhai Thư 6 acc**: mỗi máy tự lấy acc chưa chạy → làm 6 nhân vật → acc ✓ xong
+   → lấy acc tiếp. Kho hết acc thì máy tự dừng. Bấm **↺ Reset trạng thái** để chạy lại từ đầu (vd ngày mới).

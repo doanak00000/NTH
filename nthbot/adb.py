@@ -45,6 +45,8 @@ class Device:
     serial: str
     name: str = ""
     adb_path: str = "adb"
+    ld_index: int | None = None     # instance LDPlayer (để tự bật khi Start); None = thiết bị adb thường
+    ldconsole_path: str = ""
 
     def __post_init__(self):
         if not self.name:
@@ -150,8 +152,12 @@ class Device:
 
     # ---- ứng dụng -------------------------------------------------------
     def launch_app(self, package: str):
-        """Mở app bằng monkey (không cần biết activity)."""
-        self.shell(f"monkey -p {package} -c android.intent.category.LAUNCHER 1")
+        """Mở app (không cần biết activity). LDPlayer14 không có `monkey` -> dùng am start."""
+        act = self.shell(f"cmd package resolve-activity --brief {package}").strip().splitlines()
+        if act and "/" in act[-1]:
+            self.start_activity(act[-1].strip())
+        else:
+            self.shell(f"monkey -p {package} -c android.intent.category.LAUNCHER 1")
 
     def start_activity(self, component: str):
         """Mở thẳng 1 activity, vd com.foo/.MainActivity."""

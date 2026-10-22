@@ -87,19 +87,23 @@ def discover_devices(cfg: AppConfig) -> list[Device]:
             devices.append(Device(serial=d["serial"], name=d.get("name", d["serial"]),
                                   adb_path=cfg.adb_path))
     else:
-        # 2) LDPlayer qua ldconsole (chỉ lấy instance đang chạy)
-        instances = [i for i in list_instances(cfg.ldconsole_path) if i.running]
+        # 2) LDPlayer qua ldconsole: liệt kê CẢ instance đang tắt -> Start sẽ tự bật
+        instances = list_instances(cfg.ldconsole_path)
         if instances:
             for inst in instances:
-                devices.append(Device(serial=inst.serial, name=f"[{inst.index}] {inst.name}",
-                                      adb_path=cfg.adb_path))
+                devices.append(Device(serial=inst.serial, name=f"[{inst.index}] {inst.name.replace('LDPlayer', 'LD')}",
+                                      adb_path=cfg.adb_path, ld_index=inst.index,
+                                      ldconsole_path=cfg.ldconsole_path))
         else:
             # 3) fallback: bất kỳ thiết bị nào adb đang thấy
             for serial in list_adb_devices(cfg.adb_path):
                 devices.append(Device(serial=serial, name=serial, adb_path=cfg.adb_path))
 
-    # tự connect các thiết bị host:port để sẵn sàng dùng
+    # tự connect các thiết bị host:port để sẵn sàng dùng (instance LDPlayer đang tắt thì bỏ qua)
+    running = {i.index for i in instances if i.running} if not cfg.manual_devices and instances else None
     for d in devices:
+        if d.ld_index is not None and running is not None and d.ld_index not in running:
+            continue
         if ":" in d.serial:
             d.connect()
 

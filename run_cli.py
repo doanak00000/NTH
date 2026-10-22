@@ -3,8 +3,8 @@
 Chạy bot không cần UI (tiện test nhanh / chạy nền trên server).
 
 Ví dụ:
-    python run_cli.py --task thanh_nhai_thu.yaml            # chạy trên tất cả device tìm thấy
-    python run_cli.py --task thanh_nhai_thu.yaml --device 127.0.0.1:5555
+    python run_cli.py --task thanh_nhai_thu_6acc.yaml            # chạy trên tất cả device tìm thấy
+    python run_cli.py --task thanh_nhai_thu_6acc.yaml --device 127.0.0.1:5555
     python run_cli.py --list-devices
     python run_cli.py --list-tasks
 """
@@ -12,6 +12,7 @@ Ví dụ:
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 
 from nthbot.adb import Device
@@ -28,6 +29,7 @@ def main():
     ap.add_argument("--detect-package", action="store_true",
                     help="in package của app đang mở trên thiết bị (mở game trước rồi chạy)")
     args = ap.parse_args()
+    sys.stdout.reconfigure(encoding="utf-8")   # chạy nền/redirect trên Windows mặc định cp1252 -> lỗi in tiếng Việt
 
     cfg = AppConfig.load(args.config)
 

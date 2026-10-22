@@ -7,20 +7,20 @@
 #  - Trên Windows + LDPlayer: dùng adb đi kèm LDPlayer cho chắc ăn, ví dụ:
 #       adb_path: "C:/LDPlayer/LDPlayer9/adb.exe"
 #  - Để trống / "adb" nếu adb đã có trong PATH.
-adb_path: "adb"
+adb_path: "C:/LDPlayer/LDPlayer14/adb.exe"
 
 # Đường dẫn ldconsole.exe của LDPlayer (dùng để tự dò các instance).
 #  Thường là: C:/LDPlayer/LDPlayer9/ldconsole.exe
 #  Để trống nếu bạn muốn tự khai báo cổng ở mục devices bên dưới.
-ldconsole_path: "C:/LDPlayer/LDPlayer9/ldconsole.exe"
+ldconsole_path: "C:/LDPlayer/LDPlayer14/ldconsole.exe"
 
 # Package name của game (Nghịch Thủy Hàn).
 #  ⚠️ Bản GLOBAL khác bản CHINA -> phải tự dò trên máy bạn, đừng đoán.
-#  Cách lấy (mở game tới màn hình chính rồi chạy 1 trong 2):
-#     python run_cli.py --detect-package
-#     adb -s 127.0.0.1:5555 shell pm list packages | findstr -i netease
-#  rồi dán package vào đây.
-game_package: ""
+#  Cách lấy (mở game tới màn hình chính rồi chạy):
+#     C:/LDPlayer/LDPlayer9/adb.exe devices
+#     C:/LDPlayer/LDPlayer9/adb.exe -s emulator-5554 shell pm list packages -3
+#  rồi dán package vào đây. (Bản VNG/VN = vng.game.nth)
+game_package: "vng.game.nth"
 
 # Thư mục chứa ảnh mẫu và task
 templates_dir: "templates"
