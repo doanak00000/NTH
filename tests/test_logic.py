@@ -234,6 +234,19 @@ def test_chon_theo_ten_tk_1_nhan_vat():
         custom._doc_ten_nv, custom._chon_nhan_vat, custom._da_lam_hom_nay = goc
 
 
+def test_screencap_tho():
+    # header 16 byte (Android 9+) và 12 byte đều giải mã đúng; định dạng lạ -> None (lùi về PNG)
+    import numpy as np
+    from nthbot.adb import _giai_ma_tho
+    rgba = np.zeros((2, 3, 4), np.uint8)
+    rgba[0, 0] = (255, 0, 0, 255)                          # điểm đỏ
+    for hd in (np.array([3, 2, 1, 0], np.uint32), np.array([3, 2, 1], np.uint32)):
+        img = _giai_ma_tho(hd.tobytes() + rgba.tobytes())
+        assert img.shape == (2, 3, 3) and tuple(img[0, 0]) == (0, 0, 255)   # BGR
+    assert _giai_ma_tho(np.array([3, 2, 5, 0], np.uint32).tobytes() + rgba.tobytes()) is None
+    assert _giai_ma_tho(b"") is None
+
+
 if __name__ == "__main__":
     for ten, fn in list(globals().items()):
         if ten.startswith("test_"):

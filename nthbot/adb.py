@@ -30,6 +30,17 @@ def _run_quiet(cmd, timeout):
     return subprocess.run(cmd, capture_output=True, timeout=timeout, **_NO_WINDOW)
 
 
+def _giai_ma_tho(buf: bytes):
+    """screencap thô: header (w, h, format[, colorspace]) uint32 + w*h*4 byte RGBA -> ảnh BGR; sai định dạng -> None."""
+    if len(buf) < 12:
+        return None
+    w, h, fmt = np.frombuffer(buf[:12], dtype=np.uint32)
+    n = int(w) * int(h) * 4
+    if fmt != 1 or not w or not h or len(buf) - n not in (12, 16):   # 1 = RGBA_8888; Android 9+ thêm colorspace
+        return None
+    return cv2.cvtColor(np.frombuffer(buf[len(buf) - n:], dtype=np.uint8).reshape(int(h), int(w), 4), cv2.COLOR_RGBA2BGR)
+
+
 class AdbError(RuntimeError):
     """Lỗi khi gọi adb."""
 
@@ -113,10 +124,14 @@ class Device:
     def screencap(self) -> "np.ndarray":
         """Chụp màn hình -> ảnh BGR (numpy) để OpenCV xử lý.
 
-        Dùng exec-out screencap -p (PNG qua stdout, không lưu file).
+        Dùng exec-out screencap ảnh THÔ (RGBA, không nén): 0.13s/lần thay vì 0.24s của PNG (-p), máy ảo đỡ nén
+        (đo 23/10 LDPlayer14 960x540, ảnh giống hệt). Định dạng lạ (không phải RGBA_8888) -> lùi về PNG.
         """
         if cv2 is None:
             raise AdbError("Cần opencv-python để giải mã ảnh screencap.")
+        img = _giai_ma_tho(self._run(["exec-out", "screencap"], timeout=20, binary=True))
+        if img is not None:
+            return img
         raw = self._run(["exec-out", "screencap", "-p"], timeout=20, binary=True)
         arr = np.frombuffer(raw, dtype=np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
