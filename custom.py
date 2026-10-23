@@ -671,7 +671,10 @@ def _chon_theo_ten(ctx, dong=_DONG_NV, ten_cu="", scroll_keo=(152, 352, 152, 80)
             ctx.sleep(float(sau_vuot))
         _chon_nhan_vat(ctx, x, y)
         ten = ctx.variables.get("_ten_nv", "")
-        trong, truoc = cung(truoc, _chuan(ten)), _chuan(ten)
+        # dòng 1 luôn có nhân vật: tk 1 nhân vật đang chọn sẵn nó -> tên không đổi nhưng không phải dòng trống
+        #  (23/10 tk 1 nhân vật: mọi dòng bị coi là trống -> ✓ sai, 2 ngày không làm)
+        trong = cung(truoc, _chuan(ten)) and (x, y, n) != tuple(dong[0])
+        truoc = _chuan(ten)
         if ten and not trong and not any(cung(_chuan(ten), d) for d in da_lam):
             return True
         ctx.log(f"chọn nhân vật: dòng ({x},{y}) = '{ten or '?'}' (đã làm hôm nay / trống) -> thử dòng trên")
@@ -757,11 +760,11 @@ def doi_acc(ctx, slots=None, idx_var="_acc_idx",
         phieu = ctx.variables.pop("_phieu", {})
         accounts.set_nv_xong(ctx.variables["_zing_user"], idx + 1, ten, phieu)   # nhớ để chạy lại thì bỏ qua
         ctx.log(f"doi_acc: đã xong nv{idx + 1}")
-        if idx == 0:   # acc hẹn giờ: mai bắt đầu = giờ xong nhân vật 1 hôm nay + 10 phút (hàng treo chắc chắn đã hết hạn)
+        if idx == 0:   # acc hẹn giờ: mai bắt đầu = giờ xong nhân vật 1 hôm nay + 3 phút (23/10 user đổi từ 10)
             from datetime import datetime, timedelta
-            gio = (datetime.now() + timedelta(minutes=10)).strftime("%H:%M")
+            gio = (datetime.now() + timedelta(minutes=3)).strftime("%H:%M")
             if accounts.dat_gio(ctx.variables["_zing_user"], gio):
-                ctx.log(f"doi_acc: giờ hẹn mai = {gio} (giờ xong nhân vật 1 + 10 phút)")
+                ctx.log(f"doi_acc: giờ hẹn mai = {gio} (giờ xong nhân vật 1 + 3 phút)")
         loi = accounts.loi_phieu(phieu)       # bước hụt -> ⚠ + liệt kê, đừng im lặng ✓ (20/10 nuốt lỗi TNT 0/4, chụp ảnh)
         ctx.log(f"{ACC_DONE_MARK} Nhân vật {idx + 1}" + (f" ({ten})" if ten else "")
                 + (" xong nhưng ⚠ " + ", ".join(loi) if loi else " đã hoàn thành ✓"))
@@ -774,9 +777,11 @@ def doi_acc(ctx, slots=None, idx_var="_acc_idx",
             ctx.log(f"doi_acc: tk Zing {accounts.ten_hien(user)} XONG ✓")
         ctx.variables[idx_var] = 0
         # còn acc chạy được NGAY -> khởi động lại LDPlayer: chạy lâu LDPlayer phình bộ nhớ (20/10: 29GB cho máy ảo 6GB).
-        # acc kế tiếp hẹn giờ sau -> nhan_acc tự tắt LDPlayer và bật lại sát giờ hẹn
-        from datetime import datetime
-        if any(accounts._san_sang(a, datetime.now()) for a in accounts.load()):
+        # acc kế tiếp hẹn giờ > 10 phút -> nhan_acc tự tắt LDPlayer và bật lại sát giờ hẹn; hẹn <= 10 phút nhan_acc không
+        #  tắt -> cũng khởi động lại ở đây (23/10: 4 acc liền hẹn sát nhau, LDPlayer chạy 4,5h phình 55GB -> hết RAM)
+        from datetime import datetime, timedelta
+        now, hen = datetime.now(), accounts.hen_som_nhat()
+        if any(accounts._san_sang(a, now) for a in accounts.load()) or (hen and hen - now <= timedelta(minutes=10)):
             try:                             # tk đã ✓: boot lỗi mà raise thì engine làm lại doi_acc với idx 0 trên
                 khoi_dong_lai_ldplayer(ctx)  #  máy chưa lên -> chỉ ghi log, vòng sau khoi_dong_game chờ game
             except RuntimeError as e:        # StepError / AdbError; Stopped (nút Stop) vẫn đi qua
@@ -1304,6 +1309,7 @@ def _mo_trang_che(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc
     mo_hoat_dong(ctx, hoat_dong_xy)
     _find_tap(ctx, "nghe_nghiep.png", 10, 0, required=True)
     # trang Nghề nghiệp load chậm (nhất là lần đầu sau khi đổi nhân vật) -> chờ thấy icon Thiết Kế
+    #  (23/10 mẫu cắt lõi 24x24, bỏ góc chấm đỏ thông báo: mẫu cũ có chấm -> nhân vật không có chấm chỉ khớp 0.64)
     if not _cho_qua_popup(ctx, "thiet_ke_icon.png", timeout=20, region=(620, 450, 90, 80)).found:
         raise StepError("che_to: không thấy icon nghề Thiết Kế")
     ctx.sleep(1)

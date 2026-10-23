@@ -216,6 +216,24 @@ def test_lenh_web_doi_gio():
     assert tt["pub"]["gio"] == "14:10" and tt["pub"]["lenh"] == "1" and "priv" not in tt
 
 
+def test_chon_theo_ten_tk_1_nhan_vat():
+    # tk chỉ 1 nhân vật (đang chọn sẵn): bấm dòng nào tên cũng không đổi -> dòng 1 vẫn phải được chọn (23/10)
+    class Ctx:
+        variables = {}
+        log = staticmethod(lambda *_: None)
+        sleep = staticmethod(lambda *_: None)
+    goc = custom._doc_ten_nv, custom._chon_nhan_vat, custom._da_lam_hom_nay
+    custom._doc_ten_nv = lambda ctx: "NV A"
+    custom._chon_nhan_vat = lambda ctx, x, y: ctx.variables.__setitem__("_ten_nv", "NV A")
+    try:
+        custom._da_lam_hom_nay = lambda ctx, ten_cu="": []
+        assert custom._chon_theo_ten(Ctx, dong=[(1, 1, 0), (2, 2, 0)])
+        custom._da_lam_hom_nay = lambda ctx, ten_cu="": [xu._chuan("NV A")]
+        assert not custom._chon_theo_ten(Ctx, dong=[(1, 1, 0), (2, 2, 0)])
+    finally:
+        custom._doc_ten_nv, custom._chon_nhan_vat, custom._da_lam_hom_nay = goc
+
+
 if __name__ == "__main__":
     for ten, fn in list(globals().items()):
         if ten.startswith("test_"):

@@ -577,6 +577,11 @@ class MainWindow(QMainWindow):
         self.acc_panel._save(quiet=True)   # acc vừa gõ chưa bấm Lưu vẫn được các máy thấy
         self.acc_private._save(quiet=True)
         for _i, d in chosen:
+            # máy đang chạy -> bỏ qua: tạo runner mới đè lên thì runner cũ mất khỏi danh sách, Stop không dừng được,
+            #  2 bot tranh 1 LDPlayer (23/10 21:11: bấm Start 2 lần -> 3 bot, bot chờ giờ hẹn tắt LDPlayer của bot kia)
+            if (cu := self.runners.get(d.name)) and cu.thread and cu.thread.is_alive():
+                self.log_line(f"{d.name} đang chạy -> bỏ qua (bấm Stop trước nếu muốn Start lại).")
+                continue
             runner = self.orch.make_runner(
                 d, task,
                 on_log=lambda name, msg: self.bridge.log.emit(name, msg),

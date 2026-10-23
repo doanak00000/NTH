@@ -19,6 +19,7 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
    → **chế tơ** → Thanh Nhai Thư (roll + nhận ô + 4 mốc) → **chế tơ lần 2** → **treo bán tơ** → đổi nhân vật.
 5. Xong nhân vật: ghi tiến độ + tên nhân vật vào kho. Hết 6 nhân vật → acc ✓ → (20/10) **khởi động lại LDPlayer**
    (giải phóng RAM) nếu còn acc chạy được ngay; acc kế hẹn giờ > 10 phút nữa → tắt LDPlayer, bật lại sát giờ.
+   (23/10) Acc kế hẹn ≤ 10 phút cũng khởi động lại LDPlayer (4 acc liền không khởi động lại → LDPlayer 55GB, hết RAM).
    Kho hết acc → tự dừng + tắt LDPlayer.
 
 **Thời gian** (sau tối ưu): nhân vật mới ~7 phút (treo bán ~18s/ô), nhân vật đã làm ~3,5 phút, đổi nhân vật ~45–50s,
@@ -44,6 +45,8 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - Chạy không UI (debug): `python run_cli.py --task thanh_nhai_thu_6acc.yaml`. **Bảng log trên UI chỉ hiện bot do
   chính UI Start** — chạy bằng CLI thì xem cửa sổ CLI hoặc file log. Đừng chạy CLI và Start UI cùng lúc (tranh LDPlayer).
 - Mở UI + tự Start luôn: `python run.py --start` (tick mọi instance + Start task đang chọn).
+- (23/10) Bấm Start khi máy đang chạy từng tạo THÊM bot (bot cũ mất khỏi danh sách, Stop không dừng được → 3 bot tranh
+  1 LDPlayer, bot chờ giờ hẹn tắt LDPlayer của bot kia). Giờ UI bỏ qua máy đang chạy.
 
 ---
 
@@ -91,6 +94,8 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   - Dòng cuối là nhân vật **đã làm hôm nay** (tên trong kho) → kéo list về đầu, dò tên dòng 2–6 tìm nhân vật chưa
     làm (nhân vật làm DỞ đã nhảy lên trên, vd Miêu My doangia1608 20/10); không còn → tk ✓.
   - List không cuộn được (tk ít nhân vật) / bấm không đổi → dự phòng chọn theo tên (`_chon_theo_ten`).
+  - (23/10) Tk **1 nhân vật**: bấm dòng nào tên cũng không đổi → cũ coi cả dòng 1 là "trống" → ✓ sai (1 tk private
+    bỏ 2 ngày). Dòng 1 luôn có nhân vật → không bao giờ coi là trống.
   - Dừng tk khi đủ 6 lượt (đếm lượt). Bỏ dở 1 nhân vật giữa chừng thì nó KHÔNG được đếm.
 - Toạ độ dòng đo trên acc 6 nhân vật: chưa cuộn y≈115 / 201 / 288 / 369 (dòng 4 chỉ hiện 1 phần 358–381);
   sau 1 lần cuộn: 152 / 240 / 320.
@@ -136,6 +141,8 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 
 ### Chế tơ
 - Nghề nghiệp → icon **Thiết Kế** (663,488) (KHÔNG phải (293,488) chế tác). Chờ thấy `thiet_ke_icon.png` vì trang load chậm.
+  (23/10) Icon lúc có lúc không **chấm đỏ thông báo** góc phải trên → mẫu cũ có chấm chỉ khớp 0.64 khi không có
+  (kẹt 20s, Claude cứu). Mẫu giờ cắt lõi 24x24 bỏ góc chấm: không chấm 1.0, có chấm 0.96, icon khác ≤0.55.
 - Công thức: **Tơ Phiêu Vân-2 dòng thứ 3** (245,212) — toạ độ, vì dòng 1 thường được chọn sẵn.
 - Đá vàng (Diệu Tinh Thạch) ở (525,322). Tap đầu đôi khi bị bỏ qua → thử lại 3 lần.
 - 1 lần chế = 5 hoạt lực. Số lần = hoạt lực // 5; **chỉ mua phần thiếu** = số lần − số đá đang có; `^` (617,422) = tối đa → Chế Tạo.
@@ -261,7 +268,7 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   lấy tk khác (trước đây vào dòng 1 làm lại nhân vật đã xong). Cách chọn hiện tại: mục 4 "Danh sách nhân vật".
 - (19/10) **Hẹn giờ chạy acc**: cột "Giờ" trên UI (trống = chạy ngay, mặc định). Kho lưu `gio` (HH:MM) + `gio_ngay`
   (ngày đặt/cập nhật). ~~+10 phút/ngày~~ (bỏ 19/10): bot xong **nhân vật 1** của acc hẹn giờ -> `accounts.dat_gio`
-  đặt giờ hẹn = giờ xong đó -> mai bắt đầu đúng lúc hàng treo hôm trước vừa hết hạn (vào sớm thì kệ còn đầy hàng chưa
+  đặt giờ hẹn = giờ xong đó + 3 phút (23/10 user chốt, trước +10) -> mai bắt đầu đúng lúc hàng treo hôm trước vừa hết hạn (vào sớm thì kệ còn đầy hàng chưa
   hết hạn, không treo được). Không chạy ngày nào thì giờ giữ nguyên; giờ trôi muộn dần -> người dùng gõ lại.
   UI: ô Giờ theo file (bot dời giờ); chỉ ô người dùng vừa gõ (`_DA_SUA`) mới được Lưu ghi đè. Xoá dấu `_DA_SUA`
   cũng phải `blockSignals` (self-check bắt được: không chặn thì mọi ô bị coi là "vừa sửa", giờ bot dời bị đè).
