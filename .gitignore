@@ -12,3 +12,5 @@ debug_tnt_*/
 debug_scroll/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+xu_private.json
+xu_private.json.tmp

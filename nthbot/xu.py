@@ -59,9 +59,15 @@ def web_dir() -> str:
     return resolve_config_path("xu_web")
 
 
-def ghi(user: str, nv: int, ten: str, xu: str, chua_rut: str, log=print):
-    """Ghi xu của nhân vật thứ `nv` (1..6) của tk `user` cho hôm nay, bỏ ngày cũ hơn 3 ngày gần nhất, rồi push."""
-    path = os.path.join(web_dir(), "xu.json")
+def _xu_path(private: bool) -> str:
+    # acc private: file riêng trên máy (gitignore), KHÔNG nằm trong xu_web, không bao giờ push
+    return resolve_config_path("xu_private.json") if private else os.path.join(web_dir(), "xu.json")
+
+
+def ghi(user: str, nv: int, ten: str, xu: str, chua_rut: str, log=print, private: bool = False):
+    """Ghi xu của nhân vật thứ `nv` (1..6) của tk `user` cho hôm nay, bỏ ngày cũ hơn 3 ngày gần nhất, rồi push
+    (private=True: chỉ ghi file riêng trên máy, không push)."""
+    path = _xu_path(private)
     now = datetime.now()
     with _lock:
         try:
@@ -84,7 +90,29 @@ def ghi(user: str, nv: int, ten: str, xu: str, chua_rut: str, log=print):
             json.dump(data, f, ensure_ascii=False, indent=1)
         os.replace(path + ".tmp", path)
     log(f"xu: nv{nv} {ten or ''} xu={xu or '?'} chưa rút={chua_rut or '?'}")
+    if private:
+        return
     threading.Thread(target=_push, args=(log,)).start()   # không daemon: thoát tiến trình vẫn chờ push xong (20/10 mất push)
+
+
+def xu_moi_nhat(user: str, private: bool = False) -> list[tuple[str, str, str, str]]:
+    """[(tên nhân vật, xu, chưa rút, ngày YYYY-MM-DD)] lần ghi gần nhất của mỗi nhân vật tk `user`, xu nhiều trước."""
+    out = []
+    for ten, rec in _doc(_xu_path(private)).get(user, {}).items():
+        if rec.get("ngay"):
+            ngay = max(rec["ngay"])
+            v = rec["ngay"][ngay]
+            out.append((ten, v.get("xu", ""), v.get("chua_rut", ""), ngay))
+    return sorted(out, key=lambda r: -so_xu(r[1]))
+
+
+def so_xu(s: str) -> float:
+    """'1.049M' / '159.2K' / '46413' -> số (giống soXu trên web). Đọc không được -> 0."""
+    m = re.fullmatch(r"([\d.]+)\s*([MK]?)", (s or "").strip(), re.I)
+    try:
+        return float(m[1]) * {"M": 1e6, "K": 1e3}.get(m[2].upper(), 1) if m else 0
+    except ValueError:
+        return 0
 
 
 def _git(*a):

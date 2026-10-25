@@ -37,6 +37,11 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
     Rê chuột vào → danh sách **tên nhân vật** đã biết (✓ = xong hôm nay).
   - **Tự reset sau 5h sáng ngày kế tiếp** (✓ và dở → chưa chạy). ✗ lỗi giữ nguyên để người dùng xem.
     Nút Reset chỉ cần khi muốn chạy lại trong ngày.
+- (24/10) Bảng acc trên UI + web tự **xếp theo giờ chạy**: trống (chạy ngay) đầu, giờ sớm lên trước, cùng giờ giữ
+  thứ tự cũ. ▲▼ chỉ còn tác dụng giữa các acc cùng giờ.
+- (24/10) **Chọn 1 acc** trong bảng → ô dưới bảng hiện từng nhân vật + xu mới nhất (+ chưa rút, ngày nếu không phải
+  hôm nay) và tổng xu, đọc `xu_web/xu.json` (`xu.xu_moi_nhat`). Acc private (từ 24/10) cũng quét xu nhưng ghi
+  `xu_private.json` trên máy (gitignore), không push, không đụng xu_web.
 - **Giãn cách treo tơ**: Treo liền / **30s (mặc định từ 19/10)** / 40s / 45s / 1 / 3 / 5 phút — chờ giữa 2 lần treo 1 ô.
 - **Tiến độ tài khoản** (ô chữ vàng): mỗi máy 1 khối "Tài khoản X" + "Nhân vật N (tên) đã hoàn thành ✓";
   sang acc mới thì khối của máy đó xoá và bắt đầu lại.
@@ -136,7 +141,11 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - Mộng Hoa Lục (`mong_hoa_luc`, 20/10): xã giao (319,498) → tab (30,122) toạ độ cố định; **nút like** dò bằng ảnh
   (`like_da.png` xanh/1, `like_chua.png` xám/0, trên trang ≥0.95, màn khác ≤0.57); bấm 2 lần (1 like + 1 unlike — lúc
   đầu đã like hay chưa đều được), mỗi lần vùng nút phải đổi (lệch 28–99, đứng yên 0). Hụt → bấm lại / mở lại.
+  (24/10) Có nhân vật (Đá Lâm) bấm nút like lại **mở trang chi tiết bài viết** → tưởng like được, unlike hụt, TNT 3/4
+  (2 ngày liền). Giờ thấy nút like rời vùng cũ mà có ở thanh dưới (210,500) → bấm like ở đó.
 - Hảo Cảm (`hao_cam`, 21/10 chuyển từ YAML sang hàm để Thanh Nhai Thư gọi lại được khi sót).
+- (24/10) Popup **"Nhắc nhở" Giải Đấu Bang Hội** (không có X) bật giữa lúc mua đá → kẹt, Claude cứu bấm Hủy Bỏ
+  (357,342). Đã thêm mốc `moc_nhac_nho.png` vào `_MOC_BANNER` → tự Hủy Bỏ.
 - Lần đầu mở nghề lạ (vd Câu Cá) có popup "Nhắc nhở" → **Hủy Bỏ**, đừng nhận.
 
 ### Chế tơ
@@ -149,6 +158,8 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - **Chỉ mua khi giá lô rẻ nhất ≤ 83** (OCR (277,120,40,22)). Đắt hơn → chỉ chế bằng đá đang có.
 - Hoạt lực **có thể vượt tối đa** (vd 1565/1500).
 - (20/10) OCR hoạt lực đôi lúc trượt 1 lần dù số rõ ('311/1500') → đọc lại tối đa 4 lần (cách 1,5s) rồi mới báo lỗi.
+- (24/10) OCR hoạt lực x3 đọc '723/1500' thành **'7723/1500'** cả 8 lần (vô lý -> None) -> kẹt, CHỜ CLAUDE. x5 đọc đúng.
+  `_doc_so_ocr(hop_le=...)`: cách đọc có số mà không hợp lệ thì thử tiếp (x5, đảo màu).
 - (20/10) **Túi đầy** → bấm Chế Tạo hiện "Túi không đủ chỗ trống, không thể hoàn thành công thức này", hoạt lực không
   giảm. Trước đây bot bấm 3 lần + chế tơ lần 2 còn mua thêm đá vô ích (tk test3). Giờ: bấm xong mà hoạt lực không giảm
   → phiếu `nghề nghiệp: failed` + ảnh, dừng; chế tơ lần 2 của nhân vật đó bỏ qua (vẫn mở trang chế cho treo_to).
@@ -197,6 +208,7 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   chính, gọi lại `chup_anh` / `mong_hoa_luc` / `hao_cam` / `che_to`, mở lại TNT, nhận (mỗi nhiệm vụ 1 lần/nhân vật;
   thời gian làm lại không tính vào hạn 180s). Phiếu ghi `làm lại <nhiệm vụ>: 1`. Đã chạy thật 21/10 (KhâuSơnTùng
   tk test1, gọi roll TRƯỚC khi làm gì): tự làm lại cả 4 rồi nhận 4/4. Thử nhận diện trên 56 ô thật × 5 vị trí: đúng hết.
+  (24/10) Làm lại xong thì xoá phiếu 'failed' cũ của nhiệm vụ đó (trước đây TNT 4/4 mà nhân vật vẫn ⚠).
   Các nhiệm vụ khác trong Đề Cử (Cốt Truyện, Thi Đấu, Phó Bản, Trang Viên, Tiệc Trang Viên, Hoạt Động Bang, Thám Hiểm,
   Du Ngoạn) bot không làm → roll đi như cũ. Ảnh mẫu đã gom: `debug_tnt/` (tk test1 21/10), `debug_tnt_20_10/`.
 
@@ -278,7 +290,7 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - (19/10) Roll Thanh Nhai Thư tối đa **180s** (`max_giay`, người dùng chọn): hụt nhiệm vụ (vd chụp ảnh không xong)
   thì không bao giờ đủ 4 ô -> trước roll ~120 vòng (~8 phút). Giờ quá 180s thì thôi, nhận mốc rồi đi tiếp.
 - **QUY TẮC ACC PRIVATE (bắt buộc):**
-  - Acc người dùng nói là private -> LUÔN vào kho private (`private: true`). Không bao giờ quét xu, không đưa
+  - Acc người dùng nói là private -> LUÔN vào kho private (`private: true`). (24/10) Xu chỉ ghi `xu_private.json` trên máy để xem trên tool; không đưa
     tên/tk/nhân vật/xu hay BẤT CỨ thông tin gì của acc private lên web (xu_web, GitHub), dù nút bật hay tắt.
   - **Không thêm/sửa acc private trong `accounts.yaml` khi tool đang chạy code CŨ** (UI mở trước khi có cờ
     `private`): code cũ ghi lại kho mỗi lần cập nhật tiến độ -> mất cờ `private` -> acc thành public, bị lấy chạy

@@ -58,7 +58,10 @@ def _man_doi(truoc, sau, nguong=5.0):
 
 _X_MAC_DINH = ("dong_update.png", "dong_thong_bao.png", "dong_quang_cao.png")
 # banner có nút X trong suốt (mẫu X trượt khi nền game đổi): mốc trên ảnh banner -> toạ độ nút X của nó
-_MOC_BANNER = {"moc_nhat_nien.png": (754, 105)}   # 'Nhất Niên Hồi Ức' (10-22/10): nút 'Kể Chuyện Ngay!'
+_MOC_BANNER = {"moc_nhat_nien.png": (754, 105),   # 'Nhất Niên Hồi Ức' (10-22/10): nút 'Kể Chuyện Ngay!'
+               # (24/10) popup 'Nhắc nhở' Giải Đấu Bang Hội (không có X, che lúc mua đá) -> Hủy Bỏ, đừng Đồng Ý
+               # (bị đưa đi chỗ khác). Mốc = tiêu đề: popup 1.0, 76 ảnh khác <= 0.50
+               "moc_nhac_nho.png": (357, 342)}
 
 
 def _tim_nut_x(ctx, screen, confidence=0.85):
@@ -245,9 +248,9 @@ def mong_hoa_luc(ctx, xa_giao=(319, 498), tab=(30, 122), thu=(632, 240), vung_li
 
     Trong task .yaml:  - python: { func: mong_hoa_luc }
     """
-    def tim_nut():
+    def tim_nut(vung=vung_like):
         return next((m for img in ("like_da.png", "like_chua.png")
-                     if (m := ctx.find(img, region=tuple(vung_like), confidence=0.85)).found), None)
+                     if (m := ctx.find(img, region=tuple(vung), confidence=0.85)).found), None)
 
     nut = None
     for i in range(int(lan)):
@@ -272,11 +275,18 @@ def mong_hoa_luc(ctx, xa_giao=(319, 498), tab=(30, 122), thu=(632, 240), vung_li
     def vung():
         return ctx.capture()[nut.y - 10:nut.y + 10, nut.x - 10:nut.x + 10]
 
+    chi_tiet = False
     for k, ten in enumerate(("like", "unlike")):
         for i in range(int(lan)):
             truoc = vung()
             ctx.device.tap(nut.x, nut.y)
             ctx.sleep(float(cho))
+            # (24/10, Đá Lâm 2 ngày liền) bấm like lại MỞ TRANG CHI TIẾT bài viết (chưa like) -> vùng đổi bị tưởng
+            # like được, unlike hụt 3 lần, TNT 3/4. Trang chi tiết có nút like ở thanh dưới (210,500; mẫu khớp 0.99)
+            if not chi_tiet and tim_nut() is None and (ct := tim_nut((180, 470, 60, 60))) is not None:
+                ctx.log("mộng hoa lục: vào trang chi tiết bài viết -> bấm like ở thanh dưới")
+                nut, chi_tiet = ct, True
+                continue
             if _man_doi(truoc, vung(), nguong):
                 break
             ctx.log(f"mộng hoa lục: bấm {ten} không đổi trạng thái -> bấm lại ({i + 1}/{lan})")
@@ -329,6 +339,10 @@ def _lam_lai_nv_tnt(ctx, ten):
     """Nhiệm vụ `ten` (1 trong _LAM_LAI_TNT) vẫn chưa làm trên Thanh Nhai Thư -> về màn chính làm lại, mở lại trang."""
     ctx.log(f"Thanh Nhai Thư: '{ten}' vẫn CHƯA LÀM -> đã sót bước, về màn chính làm lại")
     ctx.ghi_phieu(f"làm lại {ten}", 1)
+    # (24/10 TràChiHy) lần đầu hụt, làm lại được (TNT 4/4) mà phiếu vẫn ⚠ -> xoá 'failed' cũ; làm lại hụt thì tự ghi lại
+    phieu = ctx.variables.get("_phieu", {})
+    for k in [k for k, v in phieu.items() if k.startswith(ten) and v == "failed"]:
+        del phieu[k]
     ve_man_hinh_chinh(ctx)
     {"chụp ảnh": chup_anh, "mộng hoa lục": mong_hoa_luc, "hảo cảm": hao_cam, "nghề nghiệp": che_to}[ten](ctx)
     ve_man_hinh_chinh(ctx)
@@ -1213,17 +1227,21 @@ _NUMPAD = {"1": (741, 141), "2": (796, 141), "3": (851, 141), "4": (741, 197), "
 _NUMPAD_XOA, _NUMPAD_OK = (741, 307), (851, 307)
 
 
-def _doc_so_ocr(ctx, region, whitelist="0123456789"):
+def _doc_so_ocr(ctx, region, whitelist="0123456789", hop_le=None):
     """OCR 1 vùng, thử cả 2 chiều sáng/tối, trả text đầu tiên có chữ số ('' nếu không đọc được).
-    Phóng x3 không ra thì thử x5: số 1 chữ số ('Lợi ích: 0') x3 chỉ đọc được 1/4 ảnh, x5 đọc 4/4 (đo 20/10)."""
+    Phóng x3 không ra thì thử x5: số 1 chữ số ('Lợi ích: 0') x3 chỉ đọc được 1/4 ảnh, x5 đọc 4/4 (đo 20/10).
+    hop_le(text) -> bool: text có chữ số mà không hợp lệ thì thử cách đọc kế (không có thì trả text đầu tiên)."""
     from nthbot.vision import ocr_number
     scr = ctx.capture()
+    dau = ""
     for scale in (3, 5):
         for inv in (False, True):
             t = ocr_number(scr, region=tuple(region), whitelist=whitelist, invert=inv, scale=scale)
             if any(c.isdigit() for c in t):
-                return t
-    return ""
+                if hop_le is None or hop_le(t):
+                    return t
+                dau = dau or t
+    return dau
 
 
 def _so_da_dang_co(text):
@@ -1360,7 +1378,9 @@ def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc_xy=(24
     for vong in range(int(max_vong)):
         hl = None
         for _ in range(4):                   # OCR đôi lúc trượt 1 lần dù số rõ (20/10 '311/1500') -> đọc lại
-            hl = _doc_hoat_luc(_doc_so_ocr(ctx, hoat_luc_reg, "0123456789/"))
+            # (24/10 tk test2) x3 đọc '723/1500' thành '7723/1500' (cả 8 lần), x5 đọc đúng -> thử tiếp tới khi hợp lệ
+            hl = _doc_hoat_luc(_doc_so_ocr(ctx, hoat_luc_reg, "0123456789/",
+                                           hop_le=lambda t: _doc_hoat_luc(t) is not None))
             if hl is not None:
                 break
             ctx.sleep(1.5)
@@ -1418,11 +1438,12 @@ def _tim_thuoc_ha(ctx, screen, image, region, nguong=0.85):
 
 def _ghi_xu(ctx, xu_reg=(688, 8, 66, 26), loi_ich_reg=(644, 426, 80, 18)):   # vùng hẹp hơn mới đọc được số 0 lẻ
     """Trang Vật Phẩm Bán: OCR xu (góc phải trên, cạnh icon đồng xu; game viết tắt '1.049M') + tiền bán
-    chưa rút ('Lợi ích') -> nthbot.xu (web GitHub Pages). Lỗi chỉ ghi log, không dừng task."""
+    chưa rút ('Lợi ích') -> nthbot.xu (web GitHub Pages; acc private: file xu_private.json trên máy, KHÔNG lên web).
+    Lỗi chỉ ghi log, không dừng task."""
     from nthbot import accounts
     user = ctx.variables.get("_zing_user")
     acc = accounts.get(user) if user else None
-    if not acc or acc["private"]:            # acc private: không đưa BẤT CỨ gì lên web
+    if not acc:
         return
     try:
         from nthbot import xu
@@ -1434,7 +1455,10 @@ def _ghi_xu(ctx, xu_reg=(688, 8, 66, 26), loi_ich_reg=(644, 426, 80, 18)):   # v
         if not chua_rut:
             ctx.ghi_phieu("đọc tiền chưa rút", "failed", loi=True)
         xu.ghi(user, int(ctx.variables.get("_acc_idx", 0) or 0) + 1, ctx.variables.get("_ten_nv", ""),
-               so_xu, chua_rut, log=ctx.log)
+               so_xu, chua_rut, log=ctx.log,
+               # private: chỉ file trên máy, không lên web. Chỉ truyền khi private: tool chưa mở lại (xu.py cũ không
+               # có tham số này) thì acc public vẫn ghi bình thường, acc private lỗi TypeError -> không ghi gì
+               **({"private": True} if acc["private"] else {}))
     except Exception as e:
         ctx.log(f"xu: không ghi được xu ({e}) - bỏ qua")
 

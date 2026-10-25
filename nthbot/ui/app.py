@@ -63,6 +63,9 @@ class PreviewLabel(QLabel):
         super().__init__()
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumSize(360, 240)
+        sp = self.sizePolicy()
+        sp.setHeightForWidth(True)   # màn game nằm ngang: cao theo rộng, phần dư bên dưới để hiện nhân vật
+        self.setSizePolicy(sp)
         self.setStyleSheet("background:#111;color:#888;")
         self.setText("Chọn 1 instance để xem màn hình")
         self._img_size = (0, 0)     # (w,h) ảnh gốc
@@ -70,6 +73,9 @@ class PreviewLabel(QLabel):
         self.crop_mode = False
         self._start = None
         self._cur_rect = None
+
+    def heightForWidth(self, w):
+        return w * 9 // 16
 
     def set_image(self, img: np.ndarray):
         self._img_size = (img.shape[1], img.shape[0])
@@ -141,7 +147,7 @@ class AccountsPanel(QWidget):
         self.private = private   # True = kho acc private: không quét xu / không lên web
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(QLabel("🔒 Kho acc PRIVATE (không quét xu, không đưa gì lên web):" if private else
+        lay.addWidget(QLabel("🔒 Kho acc PRIVATE (xu chỉ lưu trên máy, không đưa gì lên web):" if private else
                              "Kho tài khoản Zing (các máy tự lấy acc được tick Chọn, chưa chạy):"))
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(["Chọn", "Tài khoản", "Mật khẩu", "Rút ví", "Giờ", "Trạng thái"])
@@ -150,6 +156,12 @@ class AccountsPanel(QWidget):
             self.table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         lay.addWidget(self.table, 1)
+        # chọn 1 acc -> danh sách nhân vật + xu mới nhất từng nhân vật (xu_web/xu.json)
+        self.xu_box = QLabel()
+        self.xu_box.setWordWrap(True)
+        self.xu_box.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.xu_box.setAlignment(Qt.AlignTop | Qt.AlignLeft)   # cửa sổ chính đặt box này dưới màn hình preview
+        self.table.itemSelectionChanged.connect(self._hien_xu)
 
         btns = QHBoxLayout()
         for text, fn in [("+ Thêm", self._add), ("− Xoá", self._remove), ("▲", lambda: self._move(-1)),
@@ -166,7 +178,13 @@ class AccountsPanel(QWidget):
                 continue
             self._add(a["user"], a["pass"], a["status"], a["nv_xong"], a["rut_vi"], a["nhan_vat"], a["chon"],
                       a["gio"], a["gio_ngay"])
+        self._sap_xep()
         self.table.itemChanged.connect(self._sua_o)
+
+    def _sap_xep(self):
+        """Xếp dòng theo giờ chạy: trống (chạy ngay) đầu, rồi giờ sớm -> muộn; cùng giờ giữ thứ tự cũ (sort ổn định)."""
+        self.table.sortItems(self.C_GIO)
+        self._an()   # kho private: tên giả 'tk testN' theo số dòng mới
 
     @staticmethod
     def _status_text(st, nv=0, so_loi=0):
@@ -229,6 +247,24 @@ class AccountsPanel(QWidget):
         if not user:
             self.table.setCurrentCell(i, self.C_USER)
             self.table.editItem(self.table.item(i, self.C_USER))
+
+    def _hien_xu(self):
+        i = self.table.currentRow()
+        u = self._gia_tri(i, self.C_USER).strip() if i >= 0 else ""
+        if not u:
+            chu = ""
+        else:
+            from html import escape
+            from nthbot import xu
+            ds, hom_nay = xu.xu_moi_nhat(u, self.private), date.today().isoformat()
+            u = escape(accounts.ten_hien(u))   # private: 'tk testN', không lộ tk thật
+            dong = [f"{escape(ten)}: <b>{escape(x) or '?'}</b>" + (f" (chưa rút {cr})" if cr and cr != "0" else "")
+                    + ("" if ngay == hom_nay else f" <i>— {ngay[8:]}/{ngay[5:7]}</i>") for ten, x, cr, ngay in ds]
+            tong = sum(xu.so_xu(x) for _, x, _, _ in ds)
+            chu = (f"<b>{u}</b> — {len(ds)} nhân vật, tổng {tong / 1e6:.3f}M xu<br>" + "<br>".join(dong)
+                   if ds else f"<b>{u}</b>: chưa có số xu (bot ghi lúc treo bán).")
+        if self.xu_box.text() != chu:
+            self.xu_box.setText(chu)
 
     def _gia_tri(self, i, c):
         """Giá trị thật của ô tk / mk (kho private: chữ hiện là tên giả, giá trị thật nằm trong UserRole)."""
@@ -334,6 +370,7 @@ class AccountsPanel(QWidget):
             self.table.item(i, self.C_GIO).setData(_DA_SUA, None)
         self.table.blockSignals(False)
         accounts.save(others + rows if self.private else rows + others)
+        self._sap_xep()
         if not quiet:
             self.log(f"Đã lưu {len(rows)} tài khoản Zing: {accounts.path()}")
 
@@ -352,6 +389,7 @@ class AccountsPanel(QWidget):
 
     def refresh_status(self):
         live = {a["user"]: a for a in accounts.load()}
+        doi_gio = False
         for i in range(self.table.rowCount()):
             u = self._gia_tri(i, self.C_USER).strip()
             st = self.table.item(i, self.C_ST)
@@ -373,6 +411,10 @@ class AccountsPanel(QWidget):
                 g.setData(Qt.UserRole, moi)
                 g.setText(self._gio_text(*moi))
                 self.table.blockSignals(False)
+                doi_gio = True
+        if doi_gio:   # bot / web dời giờ -> xếp lại
+            self._sap_xep()
+        self._hien_xu()   # bot vừa ghi xu nhân vật mới -> cập nhật
 
 
 class MainWindow(QMainWindow):
@@ -446,6 +488,10 @@ class MainWindow(QMainWindow):
         self.table.setHorizontalHeaderLabels(["Chọn", "Tên", "Trạng thái"])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.itemSelectionChanged.connect(self._update_preview)
+        # Vừa 2 instance, nhiều hơn thì cuộn — nhường chỗ cho kho acc.
+        self.table.setMaximumHeight(self.table.horizontalHeader().sizeHint().height()
+                                    + 2 * self.table.verticalHeader().defaultSectionSize()
+                                    + 2 * self.table.frameWidth())
         ll.addWidget(self.table)
         chk_row = QHBoxLayout()
         b_all = QPushButton("Chọn tất cả")
@@ -469,7 +515,7 @@ class MainWindow(QMainWindow):
         self.preview = PreviewLabel()
         self.preview.clicked.connect(self._on_preview_click)
         self.preview.region_selected.connect(self._on_region_selected)
-        ml.addWidget(self.preview, 1)
+        ml.addWidget(self.preview)
         self.coord_label = QLabel("Toạ độ: -")
         ml.addWidget(self.coord_label)
         prow = QHBoxLayout()
@@ -485,6 +531,12 @@ class MainWindow(QMainWindow):
         self.btn_thu_nghiem.setCheckable(True)
         self.btn_thu_nghiem.toggled.connect(self.acc_private.setVisible)
         ml.addWidget(self.btn_thu_nghiem)
+        ml.addWidget(QLabel("Nhân vật của acc đang chọn:"))
+        ml.addWidget(self.acc_panel.xu_box)
+        self.acc_private.xu_box.hide()
+        self.btn_thu_nghiem.toggled.connect(self.acc_private.xu_box.setVisible)
+        ml.addWidget(self.acc_private.xu_box)
+        ml.addStretch(1)
         splitter.addWidget(mid)
 
         # phải: log
@@ -513,7 +565,7 @@ class MainWindow(QMainWindow):
         rl.addWidget(b_clear)
         splitter.addWidget(right)
 
-        splitter.setSizes([420, 480, 320])
+        splitter.setSizes([520, 440, 280])
         self.status = self.statusBar()
         self.status.showMessage(f"adb: {self.cfg.adb_path} | package: {self.cfg.game_package or '(chưa đặt)'}")
 

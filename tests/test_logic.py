@@ -24,6 +24,38 @@ def test_doc_hoat_luc():
     assert custom._doc_hoat_luc("") is None
 
 
+def test_doc_so_ocr_hop_le():
+    # 24/10: x3 đọc '7723/1500' (sai), x5 đọc '723/1500' -> có hop_le thì lấy cách đọc hợp lệ kế tiếp
+    import nthbot.vision as v
+    doc = {3: "7723/1500", 5: "723/1500"}
+    cu, v.ocr_number = v.ocr_number, lambda scr, region, whitelist, invert, scale: doc[scale]
+    try:
+        ctx = type("C", (), {"capture": lambda self: None})()
+        ok = lambda t: custom._doc_hoat_luc(t) is not None
+        assert custom._doc_so_ocr(ctx, (0, 0, 1, 1), hop_le=ok) == "723/1500"
+        assert custom._doc_so_ocr(ctx, (0, 0, 1, 1)) == "7723/1500"           # không hop_le: như cũ
+        doc[5] = "8888/1500"
+        assert custom._doc_so_ocr(ctx, (0, 0, 1, 1), hop_le=ok) == "7723/1500"  # không cách nào hợp lệ -> text đầu
+    finally:
+        v.ocr_number = cu
+
+
+def test_xu_private_khong_len_web():
+    # acc private: xu ghi file riêng trên máy, KHÔNG đụng xu_web/xu.json, không push
+    with tempfile.TemporaryDirectory() as d:
+        cu = xu._xu_path, xu._push
+        xu._xu_path = lambda private: os.path.join(d, "rieng.json" if private else "web.json")
+        xu._push = lambda log: (_ for _ in ()).throw(AssertionError("acc private không được push"))
+        try:
+            xu.ghi("tk_an", 1, "NhanVat", "1.049M", "500", log=lambda s: None, private=True)
+            assert not os.path.exists(os.path.join(d, "web.json"))
+            assert xu.xu_moi_nhat("tk_an", private=True)[0][:3] == ("NhanVat", "1.049M", "500")
+            assert xu.xu_moi_nhat("tk_an") == []
+        finally:
+            xu._xu_path, xu._push = cu
+    assert xu.so_xu("1.049M") == 1049000 and xu.so_xu("159.2K") == 159200 and xu.so_xu("?") == 0
+
+
 def test_so_da_dang_co():
     assert custom._so_da_dang_co("12/1") == 12
     assert custom._so_da_dang_co("/1") == 0               # OCR bỏ sót số 0 đỏ
