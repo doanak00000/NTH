@@ -11,12 +11,16 @@ chon    : True = acc được tick "Chọn" trên UI -> máy được lấy đ�
 private : True = kho acc private: KHÔNG BAO GIỜ quét xu / đưa gì lên web. Nút 'Chế độ thử nghiệm' trên UI
           (tên ngụy trang) chỉ ẩn/hiện bảng, không ảnh hưởng chạy hay ghi xu.
 rut_vi  : True = lúc treo bán bấm "Rút vào ví" (tick trên UI); False = để người chơi tự rút sau.
+da      : "trang" (mặc định) = cả acc mua + chế tơ bằng đá trắng tím; "vang" = cả acc mua + chế bằng đá vàng.
+          2 luồng độc lập, không tự đổi qua nhau (UI cột "Đá vàng" / web chọn).
 gio     : "HH:MM" = hẹn giờ chạy (trống = chạy ngay). gio_ngay: ngày đặt / cập nhật giờ (YYYY-MM-DD).
           Bot làm xong NHÂN VẬT 1 của acc hẹn giờ -> giờ hẹn = giờ xong đó (hôm sau bắt đầu đúng lúc hàng treo
           hôm trước vừa hết hạn) — xem dat_gio. Không chạy ngày nào thì giờ giữ nguyên.
 nhan_vat: {tên nhân vật: thời điểm xong gần nhất} — OCR tên lúc chọn nhân vật, giữ vĩnh viễn để quản lý.
 phieu   : {tên nhân vật: {bước: 'failed' / '3/4' / số..., 'luc': epoch}} — phiếu kết quả lượt gần nhất của từng
           nhân vật (ctx.ghi_phieu), giữ 3 ngày -> UI (tooltip), web (trang_thai.json), báo cáo cuối lượt.
+treo    : "" | "cho" (tick "Treo lại" trên UI / web: chờ chế độ Treo lại tơ) | "running:<máy>" (đang treo lại).
+          Chế độ Treo lại tơ chỉ đọc/ghi trường này, KHÔNG đụng status / nv_xong / nhan_vat (acc ✓ vẫn ✓).
 cap_nhat: thời điểm (epoch) cập nhật trạng thái/tiến độ gần nhất. Qua 5h sáng ngày kế tiếp thì
           'done' và tiến độ dở dang tự reset (tk 'error' giữ nguyên để người dùng xem).
 
@@ -66,7 +70,9 @@ def load() -> list[dict]:
                  "cap_nhat": float(a.get("cap_nhat", 0) or 0), "rut_vi": bool(a.get("rut_vi", True)),
                  "chon": bool(a.get("chon", True)), "private": bool(a.get("private", False)),
                  "gio": str(a.get("gio", "") or ""), "gio_ngay": str(a.get("gio_ngay", "") or ""),
-                 "nhan_vat": dict(a.get("nhan_vat") or {}), "phieu": dict(a.get("phieu") or {})} for a in data if a.get("user")]
+                 "nhan_vat": dict(a.get("nhan_vat") or {}), "phieu": dict(a.get("phieu") or {}),
+                 "treo": str(a.get("treo", "") or ""),
+                 "da": "vang" if a.get("da") == "vang" else "trang"} for a in data if a.get("user")]
         # qua 5h sáng ngày kế tiếp -> tk đã xong / làm dở được chạy lại từ đầu
         moc, doi = moc_reset(), False
         for a in accs:
@@ -92,12 +98,15 @@ def save(accs: list[dict]):
 
 
 def gio_hom_nay(a: dict, now: datetime | None = None) -> datetime | None:
-    """Giờ chạy HÔM NAY của acc hẹn giờ (= giờ đang lưu; bot tự dời bằng dat_gio). Không hẹn -> None."""
+    """Giờ chạy HÔM NAY của acc hẹn giờ (= giờ đang lưu; bot tự dời bằng dat_gio). Không hẹn -> None.
+    'Hôm nay' theo ngày game (sang ngày lúc 5h sáng, như moc_reset): giờ 00:00-04:59 là đêm cuối của ngày đó.
+    (27/10 01:06 acc hẹn 23:26 chưa kịp chạy -> trước đây tính 23:26 ngày 27, chờ gần 1 ngày, bỏ lượt 26/10.)"""
     if not a.get("gio"):
         return None
     now = now or datetime.now()
     h, m = (int(x) for x in a["gio"].split(":"))
-    return datetime.combine(now.date(), datetime.min.time()).replace(hour=h, minute=m)
+    g = datetime.fromtimestamp(moc_reset(now.timestamp())).replace(hour=h, minute=m)
+    return g + timedelta(days=1) if h < 5 else g
 
 
 def dat_gio(user: str, gio: str, ep: bool = False) -> bool:
@@ -140,6 +149,87 @@ def claim(device: str) -> dict | None:
                 save(accs)
                 return a
         return None
+
+
+NHOM_TREO = 5      # (26/10 user) chạy full xong cả 5 acc của 1 nhóm (31/10 user: 4 -> 5, kho lên 10 acc) -> treo lại các acc tick trong nhóm đó
+
+
+def cho_treo_duoc(accs: list[dict] | None = None) -> list[dict]:
+    """Acc tick "Treo lại" (treo == "cho") được treo NGAY: kho (public / private riêng) xếp như trên UI/web (giờ chạy,
+    trống đầu, cùng giờ giữ thứ tự kho), chia nhóm NHOM_TREO acc; chỉ lấy acc thuộc nhóm mà mọi acc đã chạy full
+    xong (✓ / ✗, hoặc bỏ tick Chọn). Thứ tự: nhóm đầu trước, public trước private."""
+    accs = load() if accs is None else accs
+    out = []
+    for priv in (False, True):
+        ds = sorted((a for a in accs if a["private"] == priv), key=lambda a: a["gio"])
+        for i in range(0, len(ds), NHOM_TREO):
+            nhom = ds[i:i + NHOM_TREO]
+            if all(a["status"] in ("done", "error") or not a["chon"] for a in nhom):
+                out += [a for a in nhom if a["treo"] == "cho"]
+    return out
+
+
+def ranh_cho_treo(phut: float = 30, now: datetime | None = None) -> bool:
+    """Được treo lại (thêm 1 acc) không: không acc nào đang chạy full, không acc hẹn giờ nào chưa chạy mà đã tới giờ
+    hoặc còn < `phut` phút (1 acc treo lại 6 nhân vật x 4 ô ~25-30 phút). Treo lại không đụng giờ hẹn."""
+    now = now or datetime.now()
+    accs = load()
+    if any(a["status"].startswith(RUNNING) for a in accs):
+        return False
+    # acc HẸN GIỜ đã tới / sắp tới giờ -> chạy full trước; acc "chạy ngay" chờ nhóm treo xong (luật nhóm NHOM_TREO acc).
+    # (26/10 user) acc chờ treo kế là PUBLIC -> treo trước cả acc private hẹn giờ (private chạy full sau)
+    ke = cho_treo_duoc(accs)
+    bo_private = bool(ke) and not ke[0]["private"]
+    hen = [g for a in accs if a["chon"] and not a["status"] and not (bo_private and a["private"])
+           and (g := gio_hom_nay(a, now))]
+    return all(g - now >= timedelta(minutes=phut) for g in hen)
+
+
+def claim_treo(device: str) -> dict | None:
+    """Chế độ Treo lại tơ: lấy acc đầu tiên trong cho_treo_duoc (acc ✓ hôm nay cũng treo lại được). Không còn -> None."""
+    with _lock:
+        accs = load()
+        for a in cho_treo_duoc(accs):
+            a["treo"] = RUNNING + device
+            save(accs)
+            return a
+        return None
+
+
+def ghi_treo_lai(user: str, ten: str, so: int) -> bool:
+    """Treo lại xong 1 nhân vật: ghi số ô vừa treo vào phiếu hôm nay của nhân vật đó ('treo lại', 'treo_lai_luc')
+    -> UI / web hiện cạnh 'treo x/8 ô' lần chạy full. Tên OCR mỗi lần 1 kiểu -> so bằng xu.cung. Không có phiếu -> False."""
+    from .xu import _chuan, cung
+    with _lock:
+        accs = load()
+        a = next((a for a in accs if a["user"] == user), None)
+        moc = moc_reset()
+        k = next((k for k, p in (a or {}).get("phieu", {}).items()
+                  if p.get("luc", 0) >= moc and cung(_chuan(k), _chuan(ten))), None) if ten else None
+        if k is None:
+            return False
+        a["phieu"][k].update({"treo lại": int(so), "treo_lai_luc": time.time()})
+        save(accs)
+        return True
+
+
+def set_treo(user: str, treo: str):
+    with _lock:
+        accs = load()
+        for a in accs:
+            if a["user"] == user:
+                a["treo"] = treo
+        save(accs)
+
+
+def set_da(user: str, da: str):
+    """Loại đá chế tơ của cả acc: "trang" | "vang" (giá trị khác -> "trang")."""
+    with _lock:
+        accs = load()
+        for a in accs:
+            if a["user"] == user:
+                a["da"] = "vang" if da == "vang" else "trang"
+        save(accs)
 
 
 def set_status(user: str, status: str):
@@ -222,6 +312,9 @@ def release(device: str | None = None):
         for a in accs:
             if a["status"].startswith(RUNNING) and (device is None or a["status"] == RUNNING + device):
                 a["status"] = ""
+                hit = True
+            if a["treo"].startswith(RUNNING) and (device is None or a["treo"] == RUNNING + device):
+                a["treo"] = "cho"            # treo lại dở -> lần Start sau treo lại
                 hit = True
         if hit:
             save(accs)

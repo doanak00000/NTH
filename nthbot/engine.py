@@ -434,7 +434,13 @@ def run_step(step: dict, ctx: Context):
     if action is None:
         raise StepError(f"Bước không có action hợp lệ: {list(step)}")
     ctx.check_stop()
-    return HANDLERS[action](step[action], step, ctx)
+    params = step[action]
+    # bản PC bố cục HUD khác mobile: `pc: {...}` trong params ghi đè toạ độ/tham số khi chạy trên game PC
+    if isinstance(params, dict) and "pc" in params:
+        params = {k: v for k, v in params.items() if k != "pc"}
+        if getattr(ctx.device, "loai_may", "") == "PC":
+            params.update(step[action]["pc"])
+    return HANDLERS[action](params, step, ctx)
 
 
 def run_steps(steps: list, ctx: Context, so_lan_cuu: int = 2):

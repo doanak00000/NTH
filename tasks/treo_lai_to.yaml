@@ -1,0 +1,34 @@
+# ============================================================
+#  TASK: Treo lại tơ — CHỈ gỡ hàng hết hạn + treo lại (không nhiệm vụ / chế tơ / Thanh Nhai Thư)
+# ------------------------------------------------------------
+#  Lấy các acc tick "Treo lại" (UI hoặc web), kể cả acc đã ✓ hôm nay; đi đủ 6 nhân vật, mỗi nhân vật:
+#  trang chế -> Khu Giao Dịch -> rút ví (theo tick) -> gỡ hàng hết hạn -> treo thuốc + tơ trong túi -> ghi xu.
+#  Xong acc thì bỏ tick "Treo lại", trạng thái / tiến độ / giờ hẹn của acc giữ nguyên.
+# ============================================================
+
+name: "Treo lại tơ"
+description: "Mỗi nhân vật: gỡ hàng hết hạn, treo lại tơ trong túi; acc tick 'Treo lại'."
+package: ""
+repeat: 0           # 0 = chạy tới khi hết acc tick "Treo lại".
+
+variables:
+  treo_lai: true      # custom.nhan_acc / doi_acc / bot: chế độ Treo lại tơ
+  gian_cach_treo: 20  # UI 'Giãn cách treo' ghi đè khi Start
+
+steps:
+  - python: { func: khoi_dong_game }
+  - python: { func: nhan_acc, tu_duoi: true }
+  - sleep: 3
+  - python: { func: ve_man_hinh_chinh }
+  - log: "Treo lại tơ"
+  - python: { func: treo_lai, gian_cach: "{gian_cach_treo}", max_treo: 4 }   # (26/10 user) treo lại tối đa 4 ô/nhân vật
+  - python:
+      func: doi_acc
+      zing: true
+      tu_duoi: true
+      slots:              # giống thanh_nhai_thu_6acc.yaml
+        - [139, 202]
+        - [176, 290]
+        - [164, 369]
+        - { x: 109, y: 233, scroll: 1 }
+        - { x: 119, y: 322, scroll: 1 }

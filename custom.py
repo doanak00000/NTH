@@ -25,9 +25,16 @@ def ve_man_hinh_chinh(ctx, image="nut_dong.png", max=8, cho=1.2, confidence=None
     Dùng trong task:  - python: { func: ve_man_hinh_chinh }
     Đổi ảnh nút đóng:  - python: { func: ve_man_hinh_chinh, image: "nut_x.png" }
     """
-    closed, da_do_banner = 0, False
+    closed, da_do_banner, truoc = 0, False, None
     for _ in range(int(max)):
         scr = ctx.capture()
+        # (31/10) bấm back mà màn không đổi = popup không có X (vd 'Nhắc nhở' Giải Đấu Bang Hội) đè lên -> đóng nó
+        #  trước. Trước đây bấm hụt đủ 8 lần sau popup, vẫn kẹt trang Giao Dịch -> doi_acc bấm (918,21) trúng '+' tiền
+        #  -> mở trang Nạp
+        if truoc is not None and not _man_doi(truoc, scr) and dong_banner(ctx):
+            truoc = None
+            continue
+        truoc = scr
         # màn chọn nhân vật: nút back ở đây = "đăng nhập lại?" -> KHÔNG bấm
         if ctx.find("xong_pha_giang_ho.png", region=(600, 430, 360, 110), screen=scr).found:
             break
@@ -61,7 +68,13 @@ _X_MAC_DINH = ("dong_update.png", "dong_thong_bao.png", "dong_quang_cao.png")
 _MOC_BANNER = {"moc_nhat_nien.png": (754, 105),   # 'Nhất Niên Hồi Ức' (10-22/10): nút 'Kể Chuyện Ngay!'
                # (24/10) popup 'Nhắc nhở' Giải Đấu Bang Hội (không có X, che lúc mua đá) -> Hủy Bỏ, đừng Đồng Ý
                # (bị đưa đi chỗ khác). Mốc = tiêu đề: popup 1.0, 76 ảnh khác <= 0.50
-               "moc_nhac_nho.png": (357, 342)}
+               "moc_nhac_nho.png": (357, 342),
+               # (01/11 myxinh1011) 'Nhất Niên Fashion Week' (26/10-06/11): KHÔNG thấy nút X, đóng ở góc phải trên
+               #  banner (765,108) (Claude bấm, đóng được). Mốc = chữ 'Fashion Week': banner 1.0, 131 ảnh khác <= 0.45
+               "moc_fashion_week.png": (765, 108),
+               # (04/11 myxinh1608) 'Nhất Niên Đại Yên 1st' (28/10-14/11): X trắng (850,77) chìm khi nền sáng.
+               #  Mốc = chữ 'Nhất Niên Đại Yên': banner 0.98-1.0, ảnh khác <= 0.78
+               "moc_dai_yen.png": (850, 77)}
 
 
 def _tim_nut_x(ctx, screen, confidence=0.85):
@@ -83,15 +96,18 @@ def _tim_nut_x(ctx, screen, confidence=0.85):
             best = m
     if not best.found:
         best = _tim_nut_x_hinh(ctx, screen, names)
+    # nút ✕ thu bảng Hoạt động (917,28) giống nút X quảng cáo -> bảng đang mở (thấy Cài đặt) thì bỏ
+    #  (31/10) bỏ TRƯỚC khi xét mốc banner: trước đây khớp ✕ là bỏ qua mốc -> popup 'Nhắc nhở' đè bảng Hoạt động
+    #  không được đóng, phải nhờ Claude
+    if best.found and best.x > 890 and best.y < 50 and \
+            find_template(screen, ctx.templates.get("cai_dat.png"), confidence=confidence).found:
+        best = Match(found=False)
     if not best.found:
         # nút X trong suốt, nền đổi là mẫu X trượt -> nhận BANNER bằng 1 mốc cố định trên ảnh banner, bấm X đúng chỗ
         for moc, (x, y) in _MOC_BANNER.items():
             m = find_template(screen, ctx.templates.get(moc), confidence=confidence)
             if m.found:
                 return Match(found=True, x=x, y=y, confidence=m.confidence, width=32, height=32)
-    # nút ✕ thu bảng Hoạt động (917,28) giống nút X quảng cáo -> bảng đang mở (thấy Cài đặt) thì bỏ
-    if best.found and best.x > 890 and best.y < 50 and             find_template(screen, ctx.templates.get("cai_dat.png"), confidence=confidence).found:
-        return Match(found=False)
     return best
 
 
@@ -200,6 +216,10 @@ def mo_hoat_dong(ctx, xy=(920, 31), lan=3, cho=4.0):
     """Mở bảng Hoạt động (nút góc phải trên màn chính). Game đôi khi bỏ qua lần bấm đầu
     -> bấm xong kiểm tra bảng đã mở (thấy nút Cài đặt) chưa, chưa thì đóng banner rồi bấm lại."""
     from nthbot.engine import StepError
+    # (31/10) bảng đã mở sẵn (vd đóng popup đè lên bảng rồi làm lại bước) -> bấm nữa là THU bảng lại, mà lúc thu
+    #  vẫn thấy Cài đặt -> tưởng đã mở, không thấy Nghề nghiệp -> CHỜ CLAUDE
+    if _cho_qua_popup(ctx, "cai_dat.png", timeout=0).found:
+        return True
     for _ in range(int(lan)):
         ctx.device.tap(int(xy[0]), int(xy[1]))
         if _cho_qua_popup(ctx, "cai_dat.png", timeout=cho).found:
@@ -223,7 +243,7 @@ def chup_anh(ctx, icon_xy=(33, 506), chup_xy=(854, 462), thoat_xy=(34, 25), lan=
     ctx.sleep(3)
     icon = dict(confidence=0.7, region=(0, 460, 90, 80))
     for i in range(int(lan)):
-        # icon máy ảnh còn trên màn = CHƯA vào chế độ chụp (game bỏ qua lần bấm icon; 21/10 KhâuSơnTùng: bấm chụp 3
+        # icon máy ảnh còn trên màn = CHƯA vào chế độ chụp (game bỏ qua lần bấm icon; 21/10 tk test: bấm chụp 3
         #  lần trên màn chính) -> bấm lại icon trước
         if i and _find_tap(ctx, "nut_start_chup_anh.png", 0, 3, **icon):
             ctx.log("chụp ảnh: chưa vào chế độ chụp -> bấm lại icon máy ảnh")
@@ -238,8 +258,8 @@ def chup_anh(ctx, icon_xy=(33, 506), chup_xy=(854, 462), thoat_xy=(34, 25), lan=
     return True
 
 
-def mong_hoa_luc(ctx, xa_giao=(319, 498), tab=(30, 122), thu=(632, 240), vung_like=(200, 240, 140, 110),
-                 lan=3, cho=1.5, nguong=10.0):
+def mong_hoa_luc(ctx, xa_giao=(319, 498), tab=(30, 122), thu=(632, 240), vung_like=(200, 240, 140, 110), kham_pha=(108, 75),
+                 lan=3, cho=1.5, nguong=10.0, vung_kham_pha=(40, 55, 140, 45)):
     """Mộng Hoa Lục: xã giao -> tab Mộng Hoa Lục -> bấm nút like 2 lần (1 like + 1 unlike: lúc đầu đã like hay chưa
     đều được, miễn mỗi lần bấm nút ĐỔI trạng thái) -> thu xã giao (`ve_man_hinh_chinh` sau đó đóng nốt).
     Kiểm tra bằng ảnh: thấy nút like (`like_da.png` xanh/1, `like_chua.png` xám/0; trên trang khớp >=0.95, màn khác
@@ -264,7 +284,15 @@ def mong_hoa_luc(ctx, xa_giao=(319, 498), tab=(30, 122), thu=(632, 240), vung_li
             ctx.sleep(2.5)
         ctx.device.tap(*tab)
         ctx.sleep(2.5)
-        if (nut := tim_nut()) is not None:
+        # (01/11 khadoan1608, 3/5 nhân vật) Theo Dõi trống "Chưa có nội dung Mộng Hoa Lục" (không theo dõi ai)
+        #  -> thử tab Khám Phá cạnh Theo Dõi. CHỈ bấm khi thấy chữ 'Khám Phá' (khớp 1.0, màn khác <=0.65): chưa vào
+        #  được Mộng Hoa Lục mà bấm (108,75) trên màn chính = mở bảng Nhiệm Vụ (01/11 Wfflec Dượcc)
+        if i and ctx.find("tab_kham_pha.png", region=tuple(vung_kham_pha), confidence=0.85).found:
+            ctx.device.tap(*kham_pha)
+            ctx.sleep(2.5)
+        # (28/10 Xún) bài đầu là bài chia sẻ dài -> nút like tận đáy (264,511), ngoài vung_like -> tìm xuống đáy.
+        #  Chỉ nới lúc tìm đầu: kiểm tra trang chi tiết bên dưới vẫn dùng vung_like (nút chi tiết 210,500 nằm trong vùng nới)
+        if (nut := tim_nut() or tim_nut((vung_like[0], vung_like[1], vung_like[2], 540 - vung_like[1]))) is not None:
             break
     if nut is None:
         ctx.ghi_phieu("mộng hoa lục", "failed", loi=True)
@@ -367,7 +395,7 @@ def hao_cam(ctx):
     ctx.sleep(2)
     if not _find_tap(ctx, "tang.png", 20, 2):
         ctx.ghi_phieu("hảo cảm", "failed", loi=True)
-    _find_tap(ctx, "xac_nhan.png", 2, 2)
+    _find_tap(ctx, "xac_nhan.png", 4, 2)   # (02/11) bản PC popup 'hảo cảm đầy' hiện ~3s sau khi Tặng
     return True
 
 
@@ -489,6 +517,31 @@ def roll_thanh_nhai_thu(ctx, positions=None, image="roll_thanh_nhai_thu.png",
     return ok
 
 
+def _la_chu_nhat_game(luc=None):
+    """Ngày GAME (sang ngày lúc 5h) là Chủ nhật: CN 05:00 -> T2 04:59."""
+    from datetime import datetime, timedelta
+    return ((luc or datetime.now()) - timedelta(hours=5)).weekday() == 6
+
+
+def _nhan_qua_tuan(ctx, cho=2.0, xy=(626, 490)):
+    """(01/11 user) Chủ nhật: nhận quà 'Tiến Độ Điểm Tuần' — bấm ô VẬT PHẨM dưới dòng tiêu đề (toạ độ cố định: icon
+    quà đổi hình theo tuần). Chưa đủ điểm / đã nhận -> bảng thông tin -> tắt, không coi là lỗi."""
+    if not _la_chu_nhat_game():
+        return
+    ctx.device.tap(*xy)
+    ctx.sleep(float(cho))
+    # popup quà tuần là 'Nhận Thưởng' (mờ dần hiện ra), KHÁC 'Chúc Mừng Nhận' của mốc ngày -> dò dòng chữ đáy
+    #  'Nhấn vào chỗ trống để đóng giao diện' (khớp 1.0, màn khác <=0.43; đo 01/11 mylu1108)
+    if ctx.find("nhan_thuong_dong.png", confidence=0.75).found or ctx.find("chuc_mung_nhan.png").found:
+        ctx.device.tap(480, 450)             # 'nhấn vào chỗ trống để đóng'
+        ctx.log("Tiến độ điểm tuần: đã nhận quà tuần")
+        ctx.ghi_phieu("quà tuần", "đã nhận")
+    else:
+        ctx.device.tap(620, 30)              # tắt bảng thông tin
+        ctx.log("Tiến độ điểm tuần: không có quà để nhận (đã nhận / chưa đủ điểm)")
+    ctx.sleep(1.2)
+
+
 def nhan_moc_hoat_dong(ctx, xs=(205, 278, 350, 424), y=488, cho=2.0):
     """Trang Thanh Nhai Thư: bấm lần lượt các mốc 'Tiến Độ Hoạt Động Ngày' (20/40/60/80).
     Có quà -> 'Chúc Mừng Nhận' -> bấm chỗ trống đóng; không có quà -> bảng thông tin -> tắt."""
@@ -505,6 +558,7 @@ def nhan_moc_hoat_dong(ctx, xs=(205, 278, 350, 424), y=488, cho=2.0):
         else:
             ctx.device.tap(620, 30)          # vùng trống trên tiêu đề -> tắt bảng thông tin
         ctx.sleep(1.2)
+    _nhan_qua_tuan(ctx, cho)
     if nhan == 0 and ctx.variables.get("_tnt_xong_truoc"):   # 21/10 KissU/Tắcc báo ⚠ 0/4 oan: mốc nhận từ trước
         ctx.log("Tiến độ hoạt động ngày: 4 ô đã nhận từ trước -> mốc cũng đã nhận từ trước")
         ctx.ghi_phieu("mốc", "đã nhận từ trước")
@@ -554,6 +608,19 @@ def _nav_to(ctx, nav, tx, ty):
 _REG_XONG_PHA_NV = (600, 430, 360, 110)   # nút Xông Pha Giang Hồ góc phải dưới = đang ở màn chọn nhân vật
 
 
+def _cum_chu(cot, k):
+    """(cột đầu, cột cuối) vùng chữ tên nhân vật: cụm cột trắng lớn nhất (tách cụm khi cách > 8px gốc) + các cụm sát
+    BÊN TRÁI cách <= 10px (nét bút trang trí chỉ nằm bên phải). (02/11 mylu1108) 'Sư Tán' cách 9px -> mất 'Sư',
+    'Y Tán'/'Sư Tán' cùng đọc 'Tán' -> tưởng đã làm, tk chỉ 5/6."""
+    import numpy as np
+    cum = np.split(cot, np.where(np.diff(cot) > 8 * k)[0] + 1)
+    m = max(range(len(cum)), key=lambda i: len(cum[i]))
+    dau = m
+    while dau > 0 and cum[dau][0] - cum[dau - 1][-1] <= 10 * k:
+        dau -= 1
+    return int(cum[dau][0]), int(cum[m][-1])
+
+
 def _doc_ten_nv(ctx, reg=(700, 398, 130, 24)):
     """OCR tên nhân vật ĐANG CHỌN ở ô tên góc phải dưới màn chọn nhân vật (chữ trắng). Tiếng Việt (tessdata/vie).
     Không đọc ở dòng trong list: dòng 4 chỉ hiện 1 phần -> OCR mỗi lần 1 kiểu ('niêm Bäna' / 'DiêmBảoKỳ').
@@ -577,9 +644,9 @@ def _doc_ten_nv(ctx, reg=(700, 398, 130, 24)):
         #  sáng nên vẫn đọc từ ảnh Otsu). Đo 20/10 trên 12 tên thật: đúng 7/12 -> 10/12 (bỏ dấu 11/12)
         cot = np.where((g >= 190).sum(0) >= 2)[0]
         if len(cot):
-            chinh = max(np.split(cot, np.where(np.diff(cot) > 8 * k)[0] + 1), key=len)
-            bw[:, :max(0, chinh[0] - 3 * k)] = 255
-            bw[:, chinh[-1] + 3 * k:] = 255
+            dau, cuoi = _cum_chu(cot, k)
+            bw[:, :max(0, dau - 3 * k)] = 255
+            bw[:, cuoi + 3 * k:] = 255
         bw = cv2.copyMakeBorder(bw, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255)   # lề trắng: tesseract đọc ổn hơn
         # shortcut: đường dẫn không được có dấu cách (pytesseract giữ nguyên dấu ngoặc kép) — đổi chỗ cài nếu có
         tdir = os.path.join(app_dir(), "tessdata").replace("\\", "/")
@@ -601,20 +668,24 @@ def _da_lam_hom_nay(ctx, ten_cu=""):
     """Tên (đã _chuan) các nhân vật của tk đang đăng nhập đã làm từ 5h sáng (+ `ten_cu`)."""
     from nthbot import accounts
     from nthbot.xu import _chuan
+    if ctx.variables.get("treo_lai"):        # chế độ Treo lại tơ: nhân vật đã treo lại trong lượt này (acc ✓ vẫn treo được)
+        return [_chuan(t) for t in ctx.variables.get("_treo_da_lam", [])] + ([_chuan(ten_cu)] if ten_cu else [])
     acc = accounts.get(ctx.variables.get("_zing_user") or ctx.variables.get("_dang_nhap", "")) or {}
     moc = accounts.moc_reset()
     return [_chuan(t) for t, luc in (acc.get("nhan_vat") or {}).items() if luc >= moc] + \
         ([_chuan(ten_cu)] if ten_cu else [])
 
 
-def _chon_tu_duoi(ctx, dong=_DONG_NV, ten_cu="", scroll_keo=(152, 352, 152, 80), sau_vuot=2.0, lan=3, nguong=15.0):
+def _chon_tu_duoi(ctx, dong=_DONG_NV, ten_cu="", scroll_keo=(152, 352, 152, 80), sau_vuot=2.0, lan=3, nguong=15.0,
+                  day_da_lam=False):
     """Màn chọn nhân vật: cuộn xuống đáy rồi chọn DÒNG DƯỚI CÙNG. List xếp theo lần chơi gần nhất (vừa chơi -> nhảy
     lên đầu) -> dòng cuối luôn là nhân vật lâu chưa chơi nhất -> 6 lần là đủ 6 nhân vật, KHÔNG cần đọc đúng tên
     (20/10: chọn theo tên OCR làm lại nhân vật cũ khi OCR đọc lệch; cuộn hụt mà không biết -> bỏ sót dòng 5-6).
     Kiểm tra bằng ẢNH: cuộn xong vùng list phải đổi (lệch ~28; hụt <3, nhiễu <=9 — đo trên debug_scroll/), bấm xong
     ô tên phải đổi (đổi nhân vật ~37-62; không đổi <5). Hụt -> làm lại tối đa `lan` lần.
     List không cuộn được (tk < 5 nhân vật) / bấm không đổi -> chọn theo tên như cũ (_chon_theo_ten).
-    Trả True nếu đã chọn được nhân vật (False chỉ từ nhánh dự phòng: tk đã làm hết)."""
+    Trả True nếu đã chọn được nhân vật (False chỉ từ nhánh dự phòng: tk đã làm hết).
+    day_da_lam: biết chắc dòng cuối đã làm hôm nay (đăng nhập lại tk dở 5/6) -> dò từ dòng 1, không tin tên OCR dòng cuối."""
     def vung(scr, r):
         x0, y0, w, h = r
         return scr[y0:y0 + h, x0:x0 + w]
@@ -645,7 +716,7 @@ def _chon_tu_duoi(ctx, dong=_DONG_NV, ten_cu="", scroll_keo=(152, 352, 152, 80),
     from nthbot.xu import _chuan, cung
     ten = ctx.variables.get("_ten_nv", "")
     da_lam = _da_lam_hom_nay(ctx, ten_cu)
-    if ten and any(cung(_chuan(ten), d) for d in da_lam):
+    if day_da_lam or (ten and any(cung(_chuan(ten), d) for d in da_lam)):
         # nhân vật làm DỞ (vào game rồi bị ngắt) đã nhảy lên trên, không còn ở đáy (20/10 doangia1608: Miêu My
         #  bỏ dở lúc 16:26 -> bot tưởng hết, chỉ 5/6) -> dò từng dòng theo tên tìm nhân vật chưa làm hôm nay
         ctx.log(f"chọn nhân vật: dòng cuối '{ten}' đã làm hôm nay -> dò các dòng trên tìm nhân vật chưa làm")
@@ -767,18 +838,29 @@ def doi_acc(ctx, slots=None, idx_var="_acc_idx",
         return False
 
     idx = int(ctx.variables.get(idx_var, 0) or 0)
-    if zing and ctx.variables.get("_zing_user"):
+    treo_lai = ctx.variables.get("treo_lai")
+    if zing and treo_lai and ctx.variables.get("_zing_user"):
+        # chế độ Treo lại tơ: KHÔNG ghi nv_xong / nhan_vat / giờ hẹn (acc ✓ vẫn ✓), chỉ nhớ nhân vật đã treo lượt này
+        from nthbot.bot import ACC_DONE_MARK
+        from nthbot import accounts
+        ten = ctx.variables.get("_ten_nv", "")
+        so = ctx.variables.pop("_phieu", {}).get("treo", 0)
+        if not accounts.ghi_treo_lai(ctx.variables["_zing_user"], ten, so):   # web: 'treo lại x ô (giờ)'
+            ctx.log(f"doi_acc: '{ten}' chưa có phiếu chạy full hôm nay -> không ghi số ô treo lại")
+        ctx.variables.setdefault("_treo_da_lam", []).append(ten)
+        ctx.log(f"{ACC_DONE_MARK} Nhân vật {idx + 1}" + (f" ({ten})" if ten else "") + " đã treo lại tơ ✓")
+    elif zing and ctx.variables.get("_zing_user"):
         from nthbot import accounts
         from nthbot.bot import ACC_DONE_MARK
         ten = ctx.variables.get("_ten_nv", "")
         phieu = ctx.variables.pop("_phieu", {})
         accounts.set_nv_xong(ctx.variables["_zing_user"], idx + 1, ten, phieu)   # nhớ để chạy lại thì bỏ qua
         ctx.log(f"doi_acc: đã xong nv{idx + 1}")
-        if idx == 0:   # acc hẹn giờ: mai bắt đầu = giờ xong nhân vật 1 hôm nay + 3 phút (23/10 user đổi từ 10)
-            from datetime import datetime, timedelta
-            gio = (datetime.now() + timedelta(minutes=3)).strftime("%H:%M")
+        if idx == 0:   # acc hẹn giờ: mai bắt đầu = đúng giờ xong nhân vật 1 hôm nay (3/11 user bỏ +3 phút)
+            from datetime import datetime
+            gio = datetime.now().strftime("%H:%M")
             if accounts.dat_gio(ctx.variables["_zing_user"], gio):
-                ctx.log(f"doi_acc: giờ hẹn mai = {gio} (giờ xong nhân vật 1 + 3 phút)")
+                ctx.log(f"doi_acc: giờ hẹn mai = {gio} (giờ xong nhân vật 1)")
         loi = accounts.loi_phieu(phieu)       # bước hụt -> ⚠ + liệt kê, đừng im lặng ✓ (20/10 nuốt lỗi TNT 0/4, chụp ảnh)
         ctx.log(f"{ACC_DONE_MARK} Nhân vật {idx + 1}" + (f" ({ten})" if ten else "")
                 + (" xong nhưng ⚠ " + ", ".join(loi) if loi else " đã hoàn thành ✓"))
@@ -786,7 +868,10 @@ def doi_acc(ctx, slots=None, idx_var="_acc_idx",
         # hết nhân vật của tk Zing này -> đánh dấu XONG; vòng sau nhan_acc tự lấy acc mới
         from nthbot import accounts
         user = ctx.variables.pop("_zing_user", None)
-        if user:
+        if user and treo_lai:
+            accounts.set_treo(user, "")      # bỏ tick "Treo lại", trạng thái acc giữ nguyên
+            ctx.log(f"doi_acc: tk Zing {accounts.ten_hien(user)} đã treo lại tơ xong ✓")
+        elif user:
             accounts.set_status(user, "done")
             ctx.log(f"doi_acc: tk Zing {accounts.ten_hien(user)} XONG ✓")
         ctx.variables[idx_var] = 0
@@ -795,7 +880,7 @@ def doi_acc(ctx, slots=None, idx_var="_acc_idx",
         #  tắt -> cũng khởi động lại ở đây (23/10: 4 acc liền hẹn sát nhau, LDPlayer chạy 4,5h phình 55GB -> hết RAM)
         from datetime import datetime, timedelta
         now, hen = datetime.now(), accounts.hen_som_nhat()
-        if any(accounts._san_sang(a, now) for a in accounts.load()) or (hen and hen - now <= timedelta(minutes=10)):
+        if any(accounts._san_sang(a, now) or (treo_lai and a.get("treo") == "cho") for a in accounts.load())                 or (hen and hen - now <= timedelta(minutes=10) and not treo_lai):
             try:                             # tk đã ✓: boot lỗi mà raise thì engine làm lại doi_acc với idx 0 trên
                 khoi_dong_lai_ldplayer(ctx)  #  máy chưa lên -> chỉ ghi log, vòng sau khoi_dong_game chờ game
             except RuntimeError as e:        # StepError / AdbError; Stopped (nút Stop) vẫn đi qua
@@ -809,6 +894,18 @@ def doi_acc(ctx, slots=None, idx_var="_acc_idx",
             ctx.log("doi_acc: đã hết danh sách acc -> không đổi nữa.")
             return False
         idx = 0
+
+    # (30/10 user) đang làm acc PRIVATE mà acc PUBLIC hẹn giờ còn <= 15 phút -> dừng acc private ở "dở x/6"
+    #  (giữ nv_xong, status trống), nhan_acc chờ tới giờ chạy public; xong public claim lấy lại acc dở từ dòng cuối
+    if zing and not treo_lai and (user := ctx.variables.get("_zing_user")):
+        from nthbot import accounts
+        if (a := accounts.get(user)) and a["private"] and (hp := _public_sap_toi(accounts)):
+            accounts.set_status(user, "")
+            ctx.variables.pop("_zing_user", None)
+            ctx.variables[idx_var] = 0
+            ctx.log(f"doi_acc: acc public hẹn {hp:%H:%M} sắp tới -> dừng {accounts.ten_hien(user)} ở dở {a['nv_xong']}/6, "
+                    "chạy public trước")
+            return True
 
     slot = slots[idx]
     if isinstance(slot, dict):
@@ -878,30 +975,29 @@ def khoi_dong_lai_ldplayer(ctx, timeout=240, cho_den=None):
     import time
     from datetime import datetime
     from nthbot.engine import StepError
-    from nthbot.ldplayer import quit_instance, start_instance
     d = ctx.device
-    if d.ld_index is None:
+    if not d.quan_ly:
         return False
-    ctx.log("Khởi động lại LDPlayer (giải phóng bộ nhớ)..." if cho_den is None
-            else f"Tắt LDPlayer, {cho_den:%H:%M} mới bật lại")
-    quit_instance(d.ldconsole_path, d.ld_index)
+    ctx.log(f"Khởi động lại {d.loai_may} (giải phóng bộ nhớ)..." if cho_den is None
+            else f"Tắt {d.loai_may}, {cho_den:%H:%M} mới bật lại")
+    d.tat_may()
     ctx.sleep(8)
     while cho_den is not None and datetime.now() < cho_den:
         ctx.sleep(min(30.0, max(1.0, (cho_den - datetime.now()).total_seconds())))
         ctx.tien_trien = time.time() + 120           # watchdog: đang chờ giờ hẹn, LDPlayer tắt -> đừng đóng banner
     ctx.tien_trien = time.time() + timeout + 30      # watchdog: đang chờ boot, không phải kẹt
-    start_instance(d.ldconsole_path, d.ld_index)
+    d.bat_may()
     end = time.time() + float(timeout)
     while time.time() < end:
         ctx.sleep(3)
         try:
             if d.connect() and d.getprop("sys.boot_completed") == "1":
                 ctx.sleep(5)                 # boot xong vẫn cần vài giây mới mở app được
-                ctx.log("LDPlayer đã bật lại")
+                ctx.log(f"{d.loai_may} đã bật lại")
                 return True
         except Exception:  # noqa: BLE001 - đang boot, adb chưa sẵn sàng
             pass
-    raise StepError(f"LDPlayer không boot xong sau {timeout}s")
+    raise StepError(f"{d.loai_may} không boot xong sau {timeout}s")
 
 
 def khoi_dong_game(ctx, timeout=300):
@@ -920,12 +1016,60 @@ def khoi_dong_game(ctx, timeout=300):
     # xac_nhan: popup 'Xác nhận đăng nhập lại sao?' còn treo khi tool bị tắt giữa lúc đổi tk (đã gặp 19/10)
     popups = ("tick_dieu_khoan.png", "dong_y_dieu_khoan.png", "xac_nhan.png")
     end = time.time() + float(timeout)
+    # (28/10) bình thường mở game ~45s tới form VNG; quá 150s = Android đơ ("Process system isn't responding",
+    #  bấm Wait / mở lại game không ăn) -> khởi động lại LDPlayer 1 lần
+    reboot_luc, da_reboot = time.time() + 150, False
+    # (02/11) Game "Đang dọn dẹp tệp và cục bộ" (moc_don_tep.png) ngốn cả 6 nhân CPU, lâu hơn 150s, adb rớt từng lúc
+    #  -> tool khởi động lại LDPlayer giữa chừng, game dọn lại từ đầu, lặp mãi. Thấy màn này thì chờ nó xong (tối đa 30 phút).
+    don_toi, ADB_ERR = 0.0, __import__("nthbot.adb", fromlist=["AdbError"]).AdbError
     while time.time() < end:
-        scr = ctx.capture()
+        try:
+            app = ctx.device.current_app() if ctx.package else None
+        except ADB_ERR:
+            if time.time() < don_toi:
+                ctx.log("khoi_dong_game: adb rớt lúc game đang dọn tệp -> chờ 15s, nối lại")
+                ctx.sleep(15)
+                try:
+                    ctx.device.connect()
+                except Exception:  # noqa: BLE001 - vòng sau thử lại
+                    pass
+                continue
+            raise
+        # (28/10) LDStore tự bật đè game sau khi bật LDPlayer -> game nền ANR mãi: tắt LDStore, đưa game lên lại
+        if app and ctx.package not in app:
+            if "appstore" in app:
+                ctx.device.stop_app(app)
+            ctx.log(f"khoi_dong_game: {app} đè game -> mở lại game")
+            ctx.device.launch_app(ctx.package)
+            ctx.sleep(10)
+        if not da_reboot and time.time() > reboot_luc and ctx.device.quan_ly:
+            ctx.log("khoi_dong_game: 150s game chưa lên (Android đơ?) -> khởi động lại LDPlayer")
+            da_reboot = True
+            khoi_dong_lai_ldplayer(ctx)
+            if ctx.package:
+                ctx.device.launch_app(ctx.package)
+            end = time.time() + float(timeout)
+            ctx.sleep(10)
+        try:
+            scr = ctx.capture()
+        except ADB_ERR:
+            if time.time() < don_toi:
+                continue                       # nhánh adb rớt lúc dọn tệp ở đầu vòng xử lý
+            raise
         for img, reg in dich:
             if ctx.find(img, region=reg, screen=scr).found:
                 ctx.log(f"khoi_dong_game: game sẵn sàng ({img})")
+                ctx.variables["_can_dn_lai"] = img != "thanh_nhai_thu.png"   # không phải màn chính = mất phiên đăng nhập
                 return True
+        if ctx.find("moc_don_tep.png", region=(0, 480, 480, 60), screen=scr).found:
+            if not don_toi:
+                ctx.log("khoi_dong_game: game đang dọn dẹp tệp -> chờ xong, không khởi động lại LDPlayer")
+                don_toi = time.time() + 1800
+            if time.time() > don_toi:
+                raise StepError("khoi_dong_game: game dọn dẹp tệp quá 30 phút")
+            reboot_luc = end = max(end, time.time() + 150)
+            ctx.sleep(5)
+            continue
         x = _tim_nut_x(ctx, scr)
         # đang ở trang con (Start lúc game mở dở) -> nút back xanh/vàng để thoát về màn chính
         p = x if x.found else next((m for img in popups + ("nut_dong.png", "nut_dong_vang.png")
@@ -934,6 +1078,15 @@ def khoi_dong_game(ctx, timeout=300):
             ctx.device.tap(p.x, p.y)
         ctx.sleep(3)
     raise StepError(f"khoi_dong_game: sau {timeout}s game vẫn chưa tới màn đăng nhập / màn chính")
+
+
+def _public_sap_toi(accounts, phut=15, now=None):
+    """(30/10 user) Giờ hẹn sớm nhất của acc PUBLIC (tick, chưa chạy) đã tới / còn <= `phut` phút. Không có -> None."""
+    from datetime import datetime, timedelta
+    now = now or datetime.now()
+    hen = [g for a in accounts.load() if not a["private"] and a["chon"] and not a["status"]
+           and (g := accounts.gio_hom_nay(a, now)) and g <= now + timedelta(minutes=phut)]
+    return min(hen, default=None)
 
 
 def nhan_acc(ctx, **login_kw):
@@ -949,12 +1102,25 @@ def nhan_acc(ctx, **login_kw):
     from nthbot import accounts
     from nthbot.engine import TaskDone
 
-    if ctx.variables.get("_zing_user"):
+    if u := ctx.variables.get("_zing_user"):
+        # (02/11) adb timeout -> LDPlayer sập, khởi động lại -> game về màn chọn Zing ID mà máy vẫn nhớ tk đang làm
+        #  -> trước đây chạy tiếp các hoạt động khi chưa vào game. Giờ đăng nhập lại đúng tk, chọn nhân vật dở từ dòng cuối.
+        if ctx.variables.get("_can_dn_lai") and (acc := accounts.get(u)):
+            ctx.log(f"nhan_acc: game về màn đăng nhập -> đăng nhập lại {accounts.ten_hien(u)} (nhân vật dở)")
+            doi_tk_zing(ctx, acc, **login_kw)
         return True
+    if ctx.variables.get("treo_lai"):
+        return _nhan_acc_treo(ctx, **login_kw)
+    # (26/10 user) chạy full xong cả nhóm NHOM_TREO (5) acc -> treo lại các acc tick trong nhóm (UI tự Start task Treo lại tơ,
+    #  xong tự quay về chạy full). Acc hẹn giờ tới / sắp tới giờ thì chạy full trước.
+    if not ctx.variables.get("_dn_lai") and hasattr(accounts, "cho_treo_duoc")             and accounts.cho_treo_duoc() and accounts.ranh_cho_treo():   # hasattr: tool chưa mở lại (accounts cũ)
+        raise TaskDone(f"nhóm {accounts.NHOM_TREO} acc đã chạy full xong -> treo lại tơ các acc tick")
     # đăng nhập lỗi -> engine đóng banner / Claude cứu rồi làm lại bước: thử lại ĐÚNG tk đó (đã bị đánh ✗), đừng lấy tk khác
     u = ctx.variables.pop("_dn_lai", None)
-    if u and (acc := accounts.get(u)) and acc["status"] == "error":
+    if u and (acc := accounts.get(u)) and acc["status"] in ("error", accounts.RUNNING + ctx.device.name):
         accounts.set_status(u, accounts.RUNNING + ctx.device.name)
+    elif (hp := _public_sap_toi(accounts)) and hp > datetime.now():
+        acc = None                           # acc public hẹn <= 15 phút nữa -> đừng nhận acc private, chờ tới giờ
     else:
         acc = accounts.claim(ctx.device.name)
     # còn acc hẹn giờ chưa tới giờ -> chờ (Start lúc 7h, acc hẹn 10h thì 10h mới chạy), không kết thúc task
@@ -965,7 +1131,8 @@ def nhan_acc(ctx, **login_kw):
         while datetime.now() < hen:
             ctx.sleep(min(30.0, max(1.0, (hen - datetime.now()).total_seconds())))
         khoi_dong_game(ctx)                      # chờ lâu: game có thể đã hiện màn chờ / văng
-        acc = accounts.claim(ctx.device.name)
+        hp = _public_sap_toi(accounts)
+        acc = None if hp and hp > datetime.now() else accounts.claim(ctx.device.name)
     if acc is None:
         raise TaskDone("kho acc không còn acc nào chưa chạy")
     from nthbot.bot import ACC_DONE_MARK
@@ -973,8 +1140,12 @@ def nhan_acc(ctx, **login_kw):
     ctx.log(f"{ACC_DONE_MARK}⟦MOI⟧ Tài khoản {accounts.ten_hien(acc['user'])}")
     try:
         kq = doi_tk_zing(ctx, acc, **login_kw)
-    except Exception:
-        accounts.set_status(acc["user"], "error")
+    except Exception as e:
+        from nthbot.engine import Stopped
+        if isinstance(e, Stopped):           # (26/10) bấm Stop lúc đang đăng nhập -> đừng đánh ✗; release trả "chưa chạy"
+            raise
+        if "không thấy form đăng nhập ZingID" not in str(e):   # lỗi máy (form không hiện), không phải lỗi tk -> khỏi ✗
+            accounts.set_status(acc["user"], "error")
         ctx.variables["_dn_lai"] = acc["user"]
         raise
     if kq == "het":                          # vd Reset tk đã làm đủ trong ngày -> ✓ luôn, lấy tk khác
@@ -989,6 +1160,54 @@ def nhan_acc(ctx, **login_kw):
     ctx.variables["_phieu"] = {}             # phiếu kết quả nhân vật mới (tk trước bỏ dở thì đừng dính sang)
     ctx.log(f"nhan_acc: bắt đầu nv{k + 1}" + (f" (đã xong nv1..nv{k}, bỏ qua)" if k else ""))
     return True
+
+
+def _nhan_acc_treo(ctx, **login_kw):
+    """nhan_acc của chế độ Treo lại tơ (task treo_lai_to.yaml): lấy acc tick "Treo lại", đăng nhập, bắt đầu từ
+    dòng cuối. Không hẹn giờ, không đụng status / nv_xong. Hết acc chờ treo -> kết thúc task."""
+    from nthbot import accounts
+    from nthbot.bot import ACC_DONE_MARK
+    from nthbot.engine import TaskDone
+    u = ctx.variables.pop("_dn_lai", None)   # đăng nhập lỗi -> làm lại bước: thử lại đúng tk đó
+    acc = accounts.get(u) if u else None
+    if not (acc and acc["treo"] == accounts.RUNNING + ctx.device.name):
+        # chạy full được ưu tiên: acc hẹn giờ tới / sắp tới -> nhường, UI tự quay về chạy full
+        if not accounts.ranh_cho_treo():
+            raise TaskDone("có acc hẹn giờ tới / sắp tới giờ -> nhường chạy full, treo lại sau")
+        acc = accounts.claim_treo(ctx.device.name)
+    if acc is None:
+        raise TaskDone("không còn acc nào chờ treo lại tơ")
+    ctx.log(f"nhan_acc: nhận tk Zing {accounts.ten_hien(acc['user'])} (treo lại tơ)")
+    ctx.log(f"{ACC_DONE_MARK}⟦MOI⟧ Treo lại tơ: tài khoản {accounts.ten_hien(acc['user'])}")
+    ctx.variables["_treo_da_lam"] = []
+    try:
+        doi_tk_zing(ctx, acc, **login_kw)
+    except Exception:
+        ctx.variables["_dn_lai"] = acc["user"]
+        raise
+    ctx.variables["_zing_user"] = acc["user"]
+    ctx.variables["_acc_idx"] = 0
+    ctx.variables["_phieu"] = {}
+    return True
+
+
+def treo_lai(ctx, **kw):
+    """Chế độ Treo lại tơ: màn chính -> trang chế (đường vào chợ) -> treo_to (gỡ hàng hết hạn, treo lại, ghi xu)."""
+    # (26/10) OCR tên hụt (doanmy1608 nv5 '?') / đọc sai hẳn (myxinh1011 nv3 'Tắcc' = Thiên) -> xu ghi tên lạ (web cộng
+    #  trùng), không ghi được số ô treo lại. Treo lại đi từ dưới lên = đúng thứ tự lượt chạy full hôm nay -> tên không
+    #  khớp nhân vật nào hôm nay thì lấy tên theo thứ tự phiếu.
+    # shortcut: lượt chạy full có làm lại 1 nhân vật thì thứ tự lệch, khi đó cần đọc lại tên bằng OCR khác
+    from nthbot import accounts
+    from nthbot.xu import _chuan, cung
+    ds = accounts.phieu_hom_nay(accounts.get(ctx.variables.get("_zing_user", "")) or {})
+    ten = ctx.variables.get("_ten_nv", "")
+    if not ten or not any(cung(_chuan(ten), _chuan(t)) for t, _, _ in ds):
+        idx = int(ctx.variables.get("_acc_idx", 0) or 0)
+        if idx < len(ds):
+            ctx.variables["_ten_nv"] = ds[idx][0]
+            ctx.log(f"treo_lai: tên '{ten or '?'}' không khớp nhân vật nào hôm nay -> theo thứ tự chạy full: '{ds[idx][0]}'")
+    _mo_trang_che(ctx)
+    return treo_to(ctx, **kw)
 
 
 def _go_chu(ctx, field, value):
@@ -1070,6 +1289,154 @@ def _dang_nhap_email(ctx, acc, timeout=60, o_email=(672, 128), nut_tiep=(672, 19
     raise StepError("doi_tk_zing: không qua được trang đăng nhập email")
 
 
+_SDK_PC = "VNGGamesSDK_Dialog"
+
+
+def _cho_muon_chuot(ctx, giay_ranh=3.0):
+    """Trước mỗi lần mượn chuột/phím THẬT (bản PC): chờ ô UI 'Cho phép mượn chuột + bàn phím' được tick
+    (bỏ tick lúc họp/phỏng vấn -> tool đứng chờ, không tự dùng) VÀ người dùng ngừng đụng chuột/phím `giay_ranh` giây.
+    Vừa chờ vừa báo tiến triển cho watchdog (đừng tưởng kẹt mà dò banner bấm lung tung)."""
+    import time
+    from nthbot import pc
+    da_bao = None
+    while True:
+        ctx.check_stop()
+        if not pc.CHO_PHEP_CHUOT.is_set():
+            if da_bao != "cam":
+                ctx.log("PC: cần mượn chuột + bàn phím nhưng ô 'Cho phép' đang tắt -> chờ bạn tick lại")
+                da_bao = "cam"
+        elif ctx.device.ranh_tay(giay_ranh):
+            if da_bao == "cam":
+                ctx.log("PC: đã được phép dùng chuột + bàn phím -> làm tiếp")
+            return
+        ctx.tien_trien = time.time()
+        ctx.sleep(0.5)
+
+
+def _ten_dong_sdk(img, y):
+    """OCR tên tk ở dòng y của list hộp thoại VNGGAMES (bỏ nhãn 'In Play' bên phải) -> chữ thường, bỏ khoảng trắng."""
+    import cv2
+    from nthbot.vision import ocr_text
+    import re
+    vung = img[max(y - 13, 0):y + 13, 85:290]
+    if vung.size == 0:
+        return ""
+    # (02/11) OCR hay dính '|' '\' (thanh cuộn / con trỏ) cuối tên -> chỉ giữ ký tự hợp lệ của tk Zing
+    return re.sub(r"[^a-z0-9@._]", "", ocr_text(cv2.resize(vung, None, fx=2, fy=2), config="--psm 7").lower())
+
+
+def _xoa_tk_luu_sdk(ctx, d, bam, giu):
+    """Hộp thoại VNGGAMES chỉ lưu tối đa 6 tk (đo 02/11: đủ 6 thì 'Add New' xám, bấm không ăn) -> Manage Account
+    (115,346), bấm ⊖ (315,y) 1 tk THUỘC KHO ở dòng thấp nhất nhìn thấy (tk lâu chưa dùng; KHÔNG BAO GIỜ xoá tk ngoài
+    kho = tk riêng người dùng, không xoá `giu`) -> Done (275,346). Xoá là mất ngay, không hỏi lại. True nếu đã xoá."""
+    from nthbot import accounts
+    kho = {a["user"].lower() for a in accounts.load()}
+    bam(115, 346)                            # Manage Account
+    ctx.sleep(2.5)
+    img = d.chup_cua_so(_SDK_PC)
+    for k in (3, 2, 1):                      # dòng 0 = tk riêng (luôn trên cùng), dòng 4 bị che nửa
+        y = 124 + 48 * k
+        ten = _ten_dong_sdk(img, y) if img is not None else ""
+        if ten in kho and ten != giu:
+            bam(315, y)
+            ctx.sleep(1.5)
+            bam(275, 346)                    # Done
+            ctx.log(f"doi_tk_zing: hộp thoại VNGGAMES đủ 6 tk -> xoá tk đã lưu {accounts.ten_hien(ten)} cho tk mới")
+            ctx.sleep(2.5)
+            return True
+    bam(120, 346)                            # Cancel
+    ctx.sleep(2)
+    return False
+
+
+def _dang_nhap_vng_pc(ctx, acc, timeout=90):
+    """Bản PC (02/11): icon đăng xuất ở màn server mở CỬA SỔ RIÊNG 'VNGGamesSDK_Dialog' (391x396), không nhận click
+    PostMessage -> click/gõ thật (device.click_that / go_that, mượn chuột ~0.5s). Các màn (ảnh mẫu templates_pc/):
+    list tk đã lưu -> 'Add New' -> chọn cách -> 'ZingID' -> form: tk (195,138), mk (195,193), Login (273,297)
+    -> [lần đầu tk này trên máy: điều khoản -> tick (51,224) -> Đồng ý (195,277)] -> cửa sổ đóng = vào màn server."""
+    import time
+    from nthbot import accounts
+    from nthbot.engine import StepError
+    from nthbot.vision import find_template
+    if "@" in acc["user"]:
+        # shortcut: tk email trên PC chưa làm (nút 'Email' của hộp thoại); khi có tk email thì dò luồng như ZingID
+        raise StepError(f"doi_tk_zing: bản PC chưa hỗ trợ tk email {accounts.ten_hien(acc['user'])}")
+    d, da_go, form_sau_go = ctx.device, None, 0
+    han = [time.time() + float(timeout)]
+
+    def bam(x, y):                           # click/gõ thật: chờ ô 'Cho phép' + rảnh tay; thời gian chờ không tính vào hạn
+        bd = time.time()
+        _cho_muon_chuot(ctx)
+        han[0] += time.time() - bd
+        d.click_that(_SDK_PC, x, y)
+
+    def go(s):
+        bd = time.time()
+        _cho_muon_chuot(ctx)
+        han[0] += time.time() - bd
+        d.go_that(s)
+
+    while time.time() < han[0]:
+        ctx.check_stop()
+        img = d.chup_cua_so(_SDK_PC)
+        if img is None:
+            if da_go:
+                ctx.log("doi_tk_zing: hộp thoại VNGGAMES đã đóng -> màn server")
+                return True
+            ctx.sleep(1)                     # hộp thoại chưa mở
+            continue
+
+        def thay(ten):
+            return find_template(img, ctx.templates.get(ten), confidence=0.85)
+
+        if (m := thay("sdk_dieu_khoan.png")).found:
+            bam(51, 224)
+            ctx.sleep(1)
+            bam(195, 277)
+            ctx.log("doi_tk_zing: đồng ý điều khoản VNGGAMES")
+            ctx.sleep(3)
+        elif thay("sdk_form_zing.png").found:
+            if da_go:                        # vẫn còn form sau khi bấm Login -> sai tk/mk (hoặc mạng chậm)
+                form_sau_go += 1
+                if form_sau_go >= 10:
+                    raise StepError(f"doi_tk_zing: ĐĂNG NHẬP THẤT BẠI {accounts.ten_hien(acc['user'])} trên PC "
+                                    "(form ZingID không đóng sau Login -> kiểm tra tk/mk)")
+                ctx.sleep(1.5)
+                continue
+            bam(195, 138)
+            go(acc["user"])
+            bam(195, 193)
+            go(acc["pass"])
+            bam(273, 297)
+            da_go = time.time()
+            ctx.log(f"doi_tk_zing: đã gõ tk + mk vào hộp thoại VNGGAMES ({accounts.ten_hien(acc['user'])})")
+            ctx.sleep(4)
+        elif (m := thay("sdk_zingid.png")).found:
+            bam(m.x, m.y)
+            ctx.sleep(2.5)
+        elif (m := find_template(img, ctx.templates.get("sdk_add_new.png"), confidence=0.75)).found:
+            # màn list tk đã lưu ('Add New' cam = còn chỗ; xám = đủ 6 tk, khớp ~0.845). tk đã từng đăng nhập nằm sẵn
+            #  trong list (dòng y=124+48k) -> bấm là vào, khỏi gõ mk
+            # shortcut: chỉ đọc 4 dòng đầu (list dài hơn phải cuộn) -> không thấy thì Add New gõ lại như tk mới
+            dong = next((124 + 48 * k for k in range(4) if _ten_dong_sdk(img, 124 + 48 * k) == acc["user"].lower()),
+                        None)
+            if dong is not None and not da_go:
+                bam(195, dong)
+                da_go = time.time()
+                ctx.log(f"doi_tk_zing: chọn tk đã lưu trong hộp thoại VNGGAMES ({accounts.ten_hien(acc['user'])})")
+                ctx.sleep(4)
+                continue
+            b, _, r = img[m.y - 6:m.y + 6, m.x - 30:m.x + 40].reshape(-1, 3).astype(int).max(0)
+            if r - b > 80:                   # chữ cam = Add New đang bật (cam R-B≈165, xám≈-14)
+                bam(m.x, m.y)
+                ctx.sleep(2.5)
+            elif not _xoa_tk_luu_sdk(ctx, d, bam, acc["user"].lower()):
+                raise StepError("doi_tk_zing: hộp thoại VNGGAMES đủ 6 tk mà không có tk nào của kho để xoá bớt")
+        else:
+            ctx.sleep(1)
+    raise StepError("doi_tk_zing: không đăng nhập được qua hộp thoại VNGGAMES (PC)")
+
+
 def doi_tk_zing(ctx, acc, hoat_dong_xy=(918, 21), cai_dat="cai_dat.png",
                 giao_dien_dn_xy=(440, 215), xac_nhan="xac_nhan.png",
                 dang_xuat_zing="dang_xuat_zing.png", chon_zing="chon_zing_id.png",
@@ -1099,11 +1466,14 @@ def doi_tk_zing(ctx, acc, hoat_dong_xy=(918, 21), cai_dat="cai_dat.png",
     reg_server = (300, 380, 360, 90)     # nút Xông Pha Giang Hồ ở GIỮA (màn server)
     reg_nhan_vat = (600, 430, 360, 110)  # nút Xông Pha Giang Hồ ở PHẢI DƯỚI (màn nhân vật)
     ctx.log(f"doi_tk_zing: đăng xuất -> đăng nhập {accounts.ten_hien(acc['user'])}")
+    ctx.variables.pop("_can_dn_lai", None)   # đã đăng nhập lại -> nhan_acc vòng sau khỏi làm lại
     ctx.variables["_ten_nv"] = ""        # tên nhân vật của tk trước (game vào thẳng màn chính thì không đọc lại)
 
     # 1) đang ở đâu? -> đưa về form VNG
     scr = ctx.capture()
-    if ctx.find("dn_that_bai.png", screen=scr).found:   # popup 'Đăng nhập thất bại' của tk trước còn che -> OK
+    # popup 'Đăng nhập thất bại' của tk trước còn che -> OK. (01/11 sau mylu1108 sai mk) popup '[7002] Bạn đã bỏ
+    #  qua đăng nhập bằng ZingID' cũng ở đó, OK cùng chỗ -> trước đây phải nhờ Claude cứu 2 lần
+    if ctx.find("dn_that_bai.png", screen=scr).found or ctx.find("bo_qua_zing_7002.png", screen=scr).found:
         ctx.device.tap(480, 304)
         ctx.sleep(2)
         scr = ctx.capture()
@@ -1129,33 +1499,43 @@ def doi_tk_zing(ctx, acc, hoat_dong_xy=(918, 21), cai_dat="cai_dat.png",
 
     # 2) form VNG -> ZingID -> gõ tk/mk -> Đăng nhập   (tk có '@' = tk email: luồng web riêng)
     import time
-    if "@" in acc["user"]:
+    if getattr(ctx.device, "loai_may", "") == "PC":
+        _dang_nhap_vng_pc(ctx, acc)          # bản PC: form là cửa sổ VNGGAMES riêng
+    elif "@" in acc["user"]:
         _dang_nhap_email(ctx, acc)
     else:
-        for _ in range(3):
-            _find_tap(ctx, chon_zing, 5, 4, required=False)   # form ZingID có thể đã mở sẵn
-            # bấm ZingID có thể TỰ ĐĂNG NHẬP tk lần trước -> vào thẳng màn server -> đăng xuất, thử lại
-            end, o = time.time() + float(timeout), None
-            while time.time() < end and o is None:
-                scr = ctx.capture()
-                if ctx.find(form_zing, screen=scr).found:
-                    o = "form"
-                elif ctx.find(vao_server, region=reg_server, screen=scr).found:
-                    o = "server"
-                elif (x := _tim_nut_x(ctx, scr)).found:   # popup Thông Báo che form (22/10) -> đóng ngay, đừng chờ hết giờ
-                    ctx.log(f"doi_tk_zing: đóng banner tại ({x.x},{x.y})")
-                    ctx.device.tap(x.x, x.y)
-                    ctx.sleep(2)
-                    _find_tap(ctx, chon_zing, 3, 4, required=False)   # banner che lúc bấm ZingID -> bấm lại
-                else:
-                    ctx.sleep(2)
-            if o == "form":
-                break
-            if o == "server":
-                ctx.log("doi_tk_zing: SDK tự vào tk cũ -> đăng xuất")
-                _find_tap(ctx, dang_xuat_zing, timeout, 5, required=True)
-        else:
-            raise StepError("doi_tk_zing: không thấy form đăng nhập ZingID")
+        # (05/11 user) bấm ZingID mà form không hiện (màn nền trống) -> lỗi máy, không phải lỗi tk:
+        #  tắt hẳn LDPlayer bật lại rồi thử tiếp, tối đa 2 lần; không đánh ✗ tk
+        for lan_ld in range(3):
+            for _ in range(3):
+                _find_tap(ctx, chon_zing, 5, 4, required=False)   # form ZingID có thể đã mở sẵn
+                # bấm ZingID có thể TỰ ĐĂNG NHẬP tk lần trước -> vào thẳng màn server -> đăng xuất, thử lại
+                end, o = time.time() + float(timeout), None
+                while time.time() < end and o is None:
+                    scr = ctx.capture()
+                    if ctx.find(form_zing, screen=scr).found:
+                        o = "form"
+                    elif ctx.find(vao_server, region=reg_server, screen=scr).found:
+                        o = "server"
+                    elif (x := _tim_nut_x(ctx, scr)).found:   # popup Thông Báo che form (22/10) -> đóng ngay, đừng chờ hết giờ
+                        ctx.log(f"doi_tk_zing: đóng banner tại ({x.x},{x.y})")
+                        ctx.device.tap(x.x, x.y)
+                        ctx.sleep(2)
+                        _find_tap(ctx, chon_zing, 3, 4, required=False)   # banner che lúc bấm ZingID -> bấm lại
+                    else:
+                        ctx.sleep(2)
+                if o == "form":
+                    break
+                if o == "server":
+                    ctx.log("doi_tk_zing: SDK tự vào tk cũ -> đăng xuất")
+                    _find_tap(ctx, dang_xuat_zing, timeout, 5, required=True)
+            else:
+                if lan_ld < 2 and khoi_dong_lai_ldplayer(ctx):
+                    ctx.log(f"doi_tk_zing: không thấy form ZingID -> đã khởi động lại LDPlayer (lần {lan_ld + 1}/2), thử lại")
+                    khoi_dong_game(ctx)
+                    continue
+                raise StepError("doi_tk_zing: không thấy form đăng nhập ZingID")
+            break
         _go_chu(ctx, o_tai_khoan, acc["user"])
         _go_chu(ctx, o_mat_khau, acc["pass"])
         _find_tap(ctx, nut_dn_zing, timeout, 5, required=True)
@@ -1204,7 +1584,10 @@ def doi_tk_zing(ctx, acc, hoat_dong_xy=(918, 21), cai_dat="cai_dat.png",
     # tu_duoi: nhân vật đầu tiên cũng cuộn xuống chọn dòng cuối chưa làm hôm nay (như doi_acc); không thì dòng 1
     ctx.variables["_dang_nhap"] = acc["user"]
     if tu_duoi:
-        if not _chon_tu_duoi(ctx):
+        # (05/11 mylu1108) tk dở 5/6: nhân vật dở vừa chơi nhảy lên dòng 1, dòng cuối là nhân vật làm sớm nhất hôm nay.
+        #  OCR đọc 'Y Tán' thành 'NẬT' -> tưởng chưa làm, làm lại Y Tán, bỏ sót Sư Tán. Đã chạm cả 6 -> dò từ dòng 1.
+        day = int(acc.get("nv_xong", 0) or 0) + 1 >= len(_DONG_NV)
+        if not _chon_tu_duoi(ctx, day_da_lam=day):
             return "het"                     # dòng cuối đã làm hôm nay -> tk đã làm hết, đừng vào làm lại dòng 1
     else:
         _chon_nhan_vat(ctx, *nhan_vat_1)    # dòng 1
@@ -1275,10 +1658,42 @@ def _mo_khu_giao_dich(ctx, sau=4.0):
             break
     else:
         from nthbot.engine import StepError
-        raise StepError("không thấy dòng 'Cách nhận' của đá vàng")
+        raise StepError("không thấy dòng 'Cách nhận' của đá")
     ctx.device.tap(m.x + 97, m.y)            # mũi tên ở cuối dòng 'Cách nhận'
     ctx.sleep(2)
     _find_tap(ctx, "khu_giao_dich.png", 10, sau, required=True)
+
+
+def _gia_da_hop_le(text):
+    """(05/11) OCR mất chữ số đầu: '84' -> '4', '9x' -> '27' -> tưởng rẻ, mua đá đắt (Mây, Sư Tán).
+    Giá sàn của chợ là 82 -> giá < 82 chắc chắn là đọc sai."""
+    import re
+    m = re.search(r"\d+", text)
+    return bool(m) and int(m.group()) >= 82
+
+
+def _chot_gia(texts):
+    """Chốt giá từ nhiều lần OCR: cần >= 2 lần đọc hợp lệ và TẤT CẢ lần đọc hợp lệ cùng 1 số,
+    lệch nhau / có lần đọc vô lý -> None (không chắc thì không mua)."""
+    import re
+    so = [int(re.search(r"\d+", t).group()) for t in texts if any(c.isdigit() for c in t)]
+    if len(so) < 2 or len(set(so)) != 1 or not _gia_da_hop_le(str(so[0])):
+        return None
+    return so[0]
+
+
+def _doc_gia_da(ctx, region=(277, 120, 40, 22)):
+    """Đọc giá lô rẻ nhất bằng 2 ảnh chụp x 4 cách OCR rồi _chot_gia. Trả (giá hoặc None, các lần đọc)."""
+    from nthbot.vision import ocr_number
+    texts = []
+    for lan in range(2):
+        if lan:
+            ctx.sleep(1)
+        scr = ctx.capture()
+        for scale in (3, 5):
+            for inv in (False, True):
+                texts.append(ocr_number(scr, region=region, whitelist="0123456789", invert=inv, scale=scale))
+    return _chot_gia(texts), texts
 
 
 def _mua_da(ctx, so_luong, gia_toi_da=83, sau=3.0):
@@ -1288,11 +1703,10 @@ def _mua_da(ctx, so_luong, gia_toi_da=83, sau=3.0):
     from nthbot.engine import StepError
     _mo_khu_giao_dich(ctx)
     if not _cho_qua_popup(ctx, "nut_mua.png", timeout=15).found:
-        raise StepError("không vào được màn mua đá vàng")
-    m = re.search(r"\d+", _doc_so_ocr(ctx, (277, 120, 40, 22)))   # giá lô rẻ nhất (ô đầu tiên)
-    gia = int(m.group()) if m else None
+        raise StepError("không vào được màn mua đá")
+    gia, texts = _doc_gia_da(ctx)            # giá lô rẻ nhất (ô đầu tiên), không chắc -> None
     if gia is None or gia > int(gia_toi_da):
-        ctx.log(f"mua đá: giá lô rẻ nhất {gia} > {gia_toi_da} (hoặc không đọc được) -> KHÔNG mua")
+        ctx.log(f"mua đá: giá lô rẻ nhất {gia} > {gia_toi_da} hoặc không chắc (OCR {texts}) -> KHÔNG mua")
         ctx.device.tap(45, 30)               # quay lại trang chế
         ctx.sleep(sau)
         return False
@@ -1307,6 +1721,12 @@ def _mua_da(ctx, so_luong, gia_toi_da=83, sau=3.0):
         ctx.sleep(0.3)
     ctx.device.tap(*_NUMPAD_OK)
     ctx.sleep(1.5)
+    gia2, texts = _doc_gia_da(ctx)           # chợ tự làm mới 5s/lần -> lô có thể đổi giá lúc nhập số lượng
+    if gia2 is None or gia2 > int(gia_toi_da):
+        ctx.log(f"mua đá: trước khi bấm Mua giá thành {gia2} (OCR {texts}) -> KHÔNG mua")
+        ctx.device.tap(45, 30)
+        ctx.sleep(sau)
+        return False
     _find_tap(ctx, "nut_mua.png", 5, sau, required=True)
     if _cho_qua_popup(ctx, "chuc_mung_nhan.png", timeout=10).found:
         ctx.device.tap(480, 450)             # "nhấn vào chỗ trống để đóng"
@@ -1356,7 +1776,8 @@ def quet_xu(ctx, sau=3.0):
 
 def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc_xy=(245, 212),
            hoat_luc_reg=(843, 18, 80, 22), so_da_reg=(500, 348, 50, 18), hl_moi_lan=5,
-           max_vong=3, toi_da=None, gia_da_toi_da=83, sau=3.0):
+           max_vong=3, toi_da=None, gia_da_toi_da=83, sau=3.0,
+           cong_thuc_tt_xy=(245, 86), gia_da_tt_toi_da=82):
     """CHẾ TƠ PHIÊU VÂN: Hoạt động -> Nghề nghiệp -> Thiết Kế -> Tơ Phiêu Vân-2 (dòng 3)
     -> mua đá vàng VỪA ĐỦ theo hoạt lực hiện tại (OCR) -> chế tối đa (^) -> Chế Tạo.
 
@@ -1365,6 +1786,8 @@ def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc_xy=(24
     toi_da: giới hạn tổng số lần chế (None = theo hoạt lực).
     gia_da_toi_da: chỉ mua đá khi giá lô rẻ nhất <= mức này (mặc định 83); đắt hơn thì chỉ chế
                    bằng đá đang có.
+    (05/11) Loại đá theo acc (accounts `da`): "trang" (mặc định) = dòng 1 (`cong_thuc_tt_xy`), mua đá trắng tím
+    <= gia_da_tt_toi_da; "vang" = dòng 3, mua đá vàng <= gia_da_toi_da. Không tự đổi luồng.
 
     Trong task .yaml:  - python: { func: che_to }
     """
@@ -1374,8 +1797,21 @@ def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc_xy=(24
         ctx.log("che_to: lần trước bấm Chế Tạo không ăn (túi đầy?) -> bỏ qua, không mua đá")
         return True
 
-    da_che, hl_truoc = 0, None
-    for vong in range(int(max_vong)):
+    # (05/11 user) 2 luồng ĐỘC LẬP theo lựa chọn của acc (UI cột "Đá vàng" / web): "trang" (mặc định) = dòng 1 +
+    #  mua đá trắng tím; "vang" = dòng 3 + mua đá vàng. Đá đắt / không chắc giá -> chỉ chế bằng đá đang có, KHÔNG đổi luồng.
+    from nthbot import accounts
+    acc = accounts.get(ctx.variables.get("_zing_user") or "") or {}
+    da_vang = acc.get("da") == "vang"
+    # luồng cũ (03/11): đá vàng đắt -> tự chuyển đá trắng tím, nhớ theo nhân vật
+    # nv = f"{ctx.variables.get('_zing_user')}|{ctx.variables.get('_acc_idx', 0)}"
+    # da_vang = ctx.variables.get("_het_da_vang") != nv
+    da_che, hl_truoc, vong, o_dong_tt = 0, None, 0, False
+    while vong < int(max_vong):
+        if not da_vang and not o_dong_tt:     # _mo_trang_che luôn chọn dòng 3 -> bấm lên dòng 1
+            ctx.device.tap(*cong_thuc_tt_xy)   # dòng 1: Tơ Phiêu Vân-2 dùng đá trắng tím (ô đá cùng chỗ đá vàng)
+            ctx.sleep(2.5)
+            o_dong_tt = True
+            ctx.log("che_to: chuyển sang dòng 1 (đá trắng tím)")
         hl = None
         for _ in range(4):                   # OCR đôi lúc trượt 1 lần dù số rõ (20/10 '311/1500') -> đọc lại
             # (24/10 tk test2) x3 đọc '723/1500' thành '7723/1500' (cả 8 lần), x5 đọc đúng -> thử tiếp tới khi hợp lệ
@@ -1386,7 +1822,11 @@ def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc_xy=(24
             ctx.sleep(1.5)
         if hl is None:
             raise StepError("che_to: OCR không đọc chắc được hoạt lực -> không mua đá")
-        if hl_truoc is not None and hl >= hl_truoc:
+        if hl_truoc is not None and hl > hl_truoc:
+            # (01/11 Lâm Mỳ Mỳ) OCR đọc 242 thành '22' -> chế xong còn 222 bị tưởng "không giảm" -> báo túi đầy sai,
+            #  bỏ luôn chế tơ lần 2. Chế xong mà hoạt lực TĂNG = lần đọc trước sai -> đi tiếp với số mới
+            ctx.log(f"che_to: hoạt lực {hl_truoc} -> {hl} (lần đọc trước sai) -> chế tiếp")
+        elif hl_truoc is not None and hl == hl_truoc:
             # bấm Chế Tạo mà hoạt lực không giảm = không chế được. 20/10 tk test3: "Túi không đủ chỗ trống, không thể
             #  hoàn thành công thức này" -> trước đây bấm 3 lần + chế tơ lần 2 còn mua thêm 60 đá vô ích
             ctx.log(f"che_to: bấm Chế Tạo mà hoạt lực vẫn {hl} -> không chế được (túi đầy?), dừng")
@@ -1401,9 +1841,17 @@ def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc_xy=(24
         co = _so_da_dang_co(_doc_so_ocr(ctx, so_da_reg, "0123456789/"))
         ctx.log(f"che_to: hoạt lực {hl} -> chế được {lan} lần, đang có {co} đá")
         if lan > co:
-            ctx.log(f"che_to: cần mua {lan - co} đá vàng")
-            if not _mua_da(ctx, lan - co, gia_da_toi_da):
+            ctx.log(f"che_to: cần mua {lan - co} đá {'vàng' if da_vang else 'trắng tím'}")
+            if not _mua_da(ctx, lan - co, gia_da_toi_da if da_vang else gia_da_tt_toi_da):
+                # luồng cũ: đá vàng đắt -> tự chuyển sang đá trắng tím (giờ 2 luồng độc lập, chọn theo acc)
+                # if da_vang:
+                #     ctx.variables["_het_da_vang"], da_vang = nv, False
+                #     ctx.log("che_to: hết đá vàng giá rẻ -> chuyển sang đá trắng tím")
+                #     if co <= 0:
+                #         continue
+                # elif co <= 0:
                 if co <= 0:
+                    ctx.log(f"che_to: đá {'vàng' if da_vang else 'trắng tím'} đắt / không chắc giá, không có sẵn -> bỏ qua chế")
                     break                    # đá đắt, không có đá -> bỏ qua chế
                 lan = co
         if toi_da is None:
@@ -1416,6 +1864,7 @@ def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc_xy=(24
         hl_truoc = hl
         _find_tap(ctx, "che_tao.png", 10, sau, required=True)
         da_che += lan
+        vong += 1
     ctx.ghi_phieu("chế tơ", ctx.variables.get("_phieu", {}).get("chế tơ", 0) + da_che)   # cộng 2 lần chế
     return True
 
@@ -1436,6 +1885,18 @@ def _tim_thuoc_ha(ctx, screen, image, region, nguong=0.85):
     return None
 
 
+def _sua_xu(s: str) -> str:
+    """(28/10) OCR hay mất dấu chấm: '1.1M' -> '11M' (Stylist Mỹ). Xu không bao giờ tới 10M, K luôn 1 số lẻ
+    -> M không dấu chấm thì chấm sau chữ số đầu, K không dấu chấm từ 4 chữ số thì chấm trước số cuối."""
+    import re
+    m = re.fullmatch(r"(\d+)([MK])", s or "")
+    if m and m[2] == "M" and len(m[1]) > 1:
+        return f"{m[1][0]}.{m[1][1:]}M"
+    if m and m[2] == "K" and len(m[1]) > 3:
+        return f"{m[1][:-1]}.{m[1][-1]}K"
+    return s
+
+
 def _ghi_xu(ctx, xu_reg=(688, 8, 66, 26), loi_ich_reg=(644, 426, 80, 18)):   # vùng hẹp hơn mới đọc được số 0 lẻ
     """Trang Vật Phẩm Bán: OCR xu (góc phải trên, cạnh icon đồng xu; game viết tắt '1.049M') + tiền bán
     chưa rút ('Lợi ích') -> nthbot.xu (web GitHub Pages; acc private: file xu_private.json trên máy, KHÔNG lên web).
@@ -1447,7 +1908,7 @@ def _ghi_xu(ctx, xu_reg=(688, 8, 66, 26), loi_ich_reg=(644, 426, 80, 18)):   # v
         return
     try:
         from nthbot import xu
-        so_xu, chua_rut = _doc_so_ocr(ctx, xu_reg, "0123456789.MK"), _doc_so_ocr(ctx, loi_ich_reg)
+        so_xu, chua_rut = _sua_xu(_doc_so_ocr(ctx, xu_reg, "0123456789.MK")), _doc_so_ocr(ctx, loi_ich_reg)
         if not so_xu and not chua_rut:       # không đúng trang (màn chờ...) -> đừng đè số cũ bằng rỗng
             ctx.log("xu: không đọc được xu (bỏ qua)")
             ctx.ghi_phieu("đọc xu", "failed", loi=True)

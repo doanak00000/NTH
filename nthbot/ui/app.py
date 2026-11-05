@@ -52,6 +52,7 @@ class Bridge(QObject):
     """Cầu nối tín hiệu từ luồng bot -> UI (Qt yêu cầu update UI ở main thread)."""
     log = Signal(str, str)
     state = Signal(str, str)
+    start_web = Signal(str)     # lệnh Start từ web: "thuong" | "treo"
 
 
 class PreviewLabel(QLabel):
@@ -138,8 +139,10 @@ class AccountsPanel(QWidget):
     Cột "Chọn": chỉ acc được tick mới được các máy lấy để chạy.
     Cột "Rút ví": tick = lúc treo bán bot bấm "Rút vào ví"; bỏ tick = để người chơi tự rút.
     Cột "Giờ": trống = chạy ngay; gõ HH:MM = hẹn giờ. Bot xong nhân vật 1 -> giờ hẹn tự đổi = giờ xong đó.
+    Cột "Treo lại": tick = chờ task "Treo lại tơ" (ghi file ngay khi tick; web cũng tick được, bot treo xong tự bỏ).
+    Cột "Đá vàng": tick = cả acc mua + chế tơ bằng đá vàng; bỏ tick (mặc định) = đá trắng tím. Ghi file ngay, web cũng chọn được.
     """
-    C_CHON, C_USER, C_PASS, C_RUT, C_GIO, C_ST = range(6)
+    C_CHON, C_USER, C_PASS, C_RUT, C_DA, C_GIO, C_TREO, C_ST = range(8)
 
     def __init__(self, log, private=False):
         super().__init__()
@@ -149,10 +152,11 @@ class AccountsPanel(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(QLabel("🔒 Kho acc PRIVATE (xu chỉ lưu trên máy, không đưa gì lên web):" if private else
                              "Kho tài khoản Zing (các máy tự lấy acc được tick Chọn, chưa chạy):"))
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["Chọn", "Tài khoản", "Mật khẩu", "Rút ví", "Giờ", "Trạng thái"])
+        self.table = QTableWidget(0, 8)
+        self.table.setHorizontalHeaderLabels(["Chọn", "Tài khoản", "Mật khẩu", "Rút ví", "Đá vàng", "Giờ", "Treo lại",
+                                              "Trạng thái"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        for c in (self.C_CHON, self.C_RUT, self.C_GIO):
+        for c in (self.C_CHON, self.C_RUT, self.C_DA, self.C_GIO, self.C_TREO):
             self.table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         lay.addWidget(self.table, 1)
@@ -177,7 +181,7 @@ class AccountsPanel(QWidget):
             if a["private"] != private:
                 continue
             self._add(a["user"], a["pass"], a["status"], a["nv_xong"], a["rut_vi"], a["nhan_vat"], a["chon"],
-                      a["gio"], a["gio_ngay"])
+                      a["gio"], a["gio_ngay"], a["treo"], a["da"])
         self._sap_xep()
         self.table.itemChanged.connect(self._sua_o)
 
@@ -214,7 +218,14 @@ class AccountsPanel(QWidget):
         g = accounts.gio_hom_nay({"gio": gio, "gio_ngay": gio_ngay})
         return g.strftime("%H:%M") if g else ""
 
-    def _add(self, user="", pw="", status="", nv=0, rut_vi=True, nhan_vat=None, chon=True, gio="", gio_ngay=""):
+    @staticmethod
+    def _dat_treo(it, treo):
+        """Ô "Treo lại" theo file: tick = chờ / đang treo lại."""
+        it.setCheckState(Qt.Checked if treo else Qt.Unchecked)
+        it.setText("▶" if treo.startswith(accounts.RUNNING) else "")
+
+    def _add(self, user="", pw="", status="", nv=0, rut_vi=True, nhan_vat=None, chon=True, gio="", gio_ngay="",
+             treo="", da="trang"):
         i = self.table.rowCount()
         self.table.insertRow(i)
         ch = QTableWidgetItem()
@@ -233,10 +244,22 @@ class AccountsPanel(QWidget):
         rut.setCheckState(Qt.Checked if rut_vi else Qt.Unchecked)
         self.table.setItem(i, self.C_RUT, rut)
         self.table.blockSignals(True)
+        dv = QTableWidgetItem()
+        dv.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        dv.setCheckState(Qt.Checked if da == "vang" else Qt.Unchecked)
+        dv.setToolTip("Tick = cả acc mua + chế tơ bằng ĐÁ VÀNG. Bỏ tick (mặc định) = đá trắng tím. "
+                      "Đá đắt thì chỉ chế bằng đá có sẵn, không tự đổi loại.")
+        self.table.setItem(i, self.C_DA, dv)
         g = QTableWidgetItem(self._gio_text(gio, gio_ngay))
         g.setData(Qt.UserRole, (gio, gio_ngay))
         g.setToolTip("Trống = chạy ngay. Gõ HH:MM = hẹn giờ. Bot xong nhân vật 1 thì giờ hẹn tự đổi = giờ xong đó (mai chạy lúc ấy).")
         self.table.setItem(i, self.C_GIO, g)
+        tr = QTableWidgetItem()
+        tr.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        self._dat_treo(tr, treo)
+        tr.setToolTip("Tick = chọn task 'Treo lại tơ' rồi Start: chỉ gỡ hàng hết hạn + treo lại (acc ✓ cũng được). "
+                      "Treo xong bot tự bỏ tick.")
+        self.table.setItem(i, self.C_TREO, tr)
         self.table.blockSignals(False)
         st = QTableWidgetItem(self._status_text(status, nv))
         st.setData(Qt.UserRole, (status, nv))
@@ -279,15 +302,32 @@ class AccountsPanel(QWidget):
             return
         self.table.blockSignals(True)
         for i in range(self.table.rowCount()):
+            # (28/10) N theo thứ tự trong kho như log (accounts.ten_hien) -> UI và log cùng 1 số, xếp lại theo giờ
+            #  không đổi số. Acc vừa gõ chưa Lưu (chưa có trong kho) -> tạm theo số dòng, đừng lộ tk thật
+            u = (self.table.item(i, self.C_USER) or QTableWidgetItem()).data(Qt.UserRole) or ""
+            ten_gia = accounts.ten_hien(u) if u else ""
+            n = ten_gia[len("tk test"):] if ten_gia.startswith("tk test") and ten_gia != u else str(i + 1)
             for c, ten in ((self.C_USER, "tk"), (self.C_PASS, "mk")):
                 it = self.table.item(i, c)
                 if it is not None and it.data(Qt.UserRole):
-                    it.setText(f"{ten} test{i + 1}")
+                    it.setText(f"{ten} test{n}")
         self.table.blockSignals(False)
 
     def _sua_o(self, it):
         """Gõ giờ hẹn -> chuẩn hoá HH:MM, ngày đặt = hôm nay.
+        Tick "Treo lại" -> ghi file ngay (refresh_status đồng bộ ô này theo file mỗi giây).
         Gõ vào ô tk / mk của kho private -> chữ vừa gõ là giá trị thật, rồi hiện lại tên giả."""
+        if it.column() == self.C_DA:
+            u = self._gia_tri(it.row(), self.C_USER).strip()
+            if u and accounts.get(u):        # acc mới chưa Lưu: Lưu sẽ ghi theo ô này
+                accounts.set_da(u, "vang" if it.checkState() == Qt.Checked else "trang")
+            return
+        if it.column() == self.C_TREO:
+            u = self._gia_tri(it.row(), self.C_USER).strip()
+            a = accounts.get(u) if u else None
+            if a and not a["treo"].startswith(accounts.RUNNING):   # đang treo lại thì để bot tự bỏ tick
+                accounts.set_treo(u, "cho" if it.checkState() == Qt.Checked else "")
+            return
         if it.column() == self.C_GIO:
             t = it.text().strip()
             m = re.fullmatch(r"(\d{1,2})[:hH.](\d{2})", t)
@@ -346,6 +386,7 @@ class AccountsPanel(QWidget):
                             "status": st, "nv_xong": nv, "cap_nhat": 0,
                             "rut_vi": self.table.item(i, self.C_RUT).checkState() == Qt.Checked,
                             "chon": self.table.item(i, self.C_CHON).checkState() == Qt.Checked,
+                            "da": "vang" if self.table.item(i, self.C_DA).checkState() == Qt.Checked else "trang",
                             "private": self.private, "nhan_vat": {}})
         return out
 
@@ -362,7 +403,7 @@ class AccountsPanel(QWidget):
         live = {a["user"]: a for a in accounts.load()}
         for i, r in zip(self._rows_idx(), rows):
             if r["user"] in live:
-                r.update({k: live[r["user"]][k] for k in ("status", "nv_xong", "cap_nhat", "nhan_vat", "phieu")})
+                r.update({k: live[r["user"]][k] for k in ("status", "nv_xong", "cap_nhat", "nhan_vat", "phieu", "treo")})
                 if not self.table.item(i, self.C_GIO).data(_DA_SUA):   # giờ bot tự dời giữ nguyên
                     r.update({k: live[r["user"]][k] for k in ("gio", "gio_ngay")})
         self.table.blockSignals(True)   # setData phát itemChanged -> _sua_o sẽ đánh dấu lại là 'người dùng sửa'
@@ -404,6 +445,16 @@ class AccountsPanel(QWidget):
             tip = self._tooltip(a["nhan_vat"], a["phieu"])
             if st.toolTip() != tip:
                 st.setToolTip(tip)
+            tr = self.table.item(i, self.C_TREO)   # bot treo xong / web tick -> hiện theo file
+            if (tr.checkState() == Qt.Checked) != bool(a["treo"]) or tr.text() != ("▶" if a["treo"].startswith(accounts.RUNNING) else ""):
+                self.table.blockSignals(True)
+                self._dat_treo(tr, a["treo"])
+                self.table.blockSignals(False)
+            dv = self.table.item(i, self.C_DA)   # web chọn loại đá -> hiện theo file
+            if (dv.checkState() == Qt.Checked) != (a["da"] == "vang"):
+                self.table.blockSignals(True)
+                dv.setCheckState(Qt.Checked if a["da"] == "vang" else Qt.Unchecked)
+                self.table.blockSignals(False)
             g = self.table.item(i, self.C_GIO)   # bot dời giờ hẹn (xong nhân vật 1) -> hiện theo file
             moi = (a["gio"], a["gio_ngay"])
             if not g.data(_DA_SUA) and tuple(g.data(Qt.UserRole) or ("", "")) != moi:
@@ -441,6 +492,9 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_preview)
         self.timer.start(1000)  # cập nhật preview mỗi giây
+        self.timer_treo = QTimer(self)
+        self.timer_treo.timeout.connect(self._xet_treo)
+        self.timer_treo.start(30000)
 
     # ---- dựng giao diện -------------------------------------------------
     def _build_ui(self):
@@ -461,10 +515,10 @@ class MainWindow(QMainWindow):
         top.addWidget(btn_refresh)
         top.addWidget(QLabel("Giãn cách treo tơ:"))
         self.gian_cach_box = QComboBox()
-        for text, sec in [("Treo liền", 0), ("30 giây", 30), ("40 giây", 40), ("45 giây", 45), ("1 phút", 60),
-                          ("3 phút", 180), ("5 phút", 300)]:
+        for text, sec in [("Treo liền", 0), ("20 giây", 20), ("30 giây", 30), ("40 giây", 40), ("45 giây", 45),
+                          ("1 phút", 60), ("3 phút", 180), ("5 phút", 300)]:
             self.gian_cach_box.addItem(text, sec)
-        self.gian_cach_box.setCurrentIndex(self.gian_cach_box.findData(30))   # mặc định 30s
+        self.gian_cach_box.setCurrentIndex(self.gian_cach_box.findData(20))   # (02/11 user) mặc định 20s
         top.addWidget(self.gian_cach_box)
         top.addStretch()
         self.btn_start = QPushButton("▶ Start (đã chọn)")
@@ -501,6 +555,14 @@ class MainWindow(QMainWindow):
         chk_row.addWidget(b_all)
         chk_row.addWidget(b_none)
         ll.addLayout(chk_row)
+        # bản PC: đăng nhập VNGGAMES phải mượn chuột + phím thật. Bỏ tick (đang họp...) -> tới bước đó tool đứng chờ
+        self.chk_chuot = QCheckBox("Cho phép mượn chuột + bàn phím (bản PC)")
+        self.chk_chuot.setChecked(True)
+        self.chk_chuot.setToolTip("Chỉ dùng lúc đăng nhập tk Zing trên bản PC, khi bạn ngừng đụng chuột/phím 3s.\n"
+                                  "Bỏ tick: tool vẫn chạy, tới bước cần chuột/phím thì đứng chờ tới khi tick lại.")
+        self.chk_chuot.toggled.connect(self._doi_cho_phep_chuot)
+        self.chk_chuot.hide()                # chỉ hiện khi có thiết bị PC (refresh_devices)
+        ll.addWidget(self.chk_chuot)
         self.acc_panel = AccountsPanel(self.log_line)
         ll.addWidget(self.acc_panel, 1)
         self.acc_private = AccountsPanel(self.log_line, private=True)   # hiện khi bật 'Chế độ thử nghiệm'
@@ -576,11 +638,25 @@ class MainWindow(QMainWindow):
         for i, d in enumerate(self.devices):
             chk = QTableWidgetItem()
             chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-            chk.setCheckState(Qt.Checked)
             self.table.setItem(i, 0, chk)
             self.table.setItem(i, 1, QTableWidgetItem(d.name))
             self.table.setItem(i, 2, QTableWidgetItem("idle"))
-        self.log_line(f"Tìm thấy {len(self.devices)} instance.")
+        self._tick_mac_dinh()
+        self.chk_chuot.setVisible(any(d.loai_may == "PC" for d in self.devices))
+        self.log_line(f"Tìm thấy {len(self.devices)} instance (tick sẵn: {self.cfg.may_ao_mac_dinh}).")
+
+    def _doi_cho_phep_chuot(self, bat: bool):
+        from nthbot import pc
+        (pc.CHO_PHEP_CHUOT.set if bat else pc.CHO_PHEP_CHUOT.clear)()
+        self.log_line("PC: " + ("cho phép mượn chuột + bàn phím." if bat else
+                                "KHÔNG cho mượn chuột + bàn phím -> bước đăng nhập tk Zing sẽ chờ tới khi tick lại."))
+
+    def _tick_mac_dinh(self):
+        """Chỉ tick máy ảo loại mặc định (config may_ao_mac_dinh); không có máy loại đó -> tick hết.
+        LD #0 và BlueStacks cùng cổng adb 5555 -> đừng chạy cả hai cùng lúc."""
+        hop = [d.loai_may.lower() == self.cfg.may_ao_mac_dinh.lower() for d in self.devices]
+        for i, ok in enumerate(hop):
+            self.table.item(i, 0).setCheckState(Qt.Checked if ok or not any(hop) else Qt.Unchecked)
 
     def refresh_tasks(self):
         dang_chon = self.task_box.currentText() or "thanh_nhai_thu_6acc.yaml"   # mặc định: Thanh Nhai Thư 6 acc
@@ -648,6 +724,44 @@ class MainWindow(QMainWindow):
             r.stop()
         self.log_line("Đã gửi lệnh Stop tới tất cả.")
 
+    TASK_CHE_DO = {"thuong": "thanh_nhai_thu_6acc.yaml", "treo": "treo_lai_to.yaml"}
+
+    def _dang_chay(self):
+        return [r for r in self.runners.values() if r.thread and r.thread.is_alive()]
+
+    def start_web(self, _che_do=""):
+        """Lệnh Start từ web: tool đang chạy -> bỏ qua (đừng cắt ngang acc đang chạy full; tick "Treo lại" từ web
+        tool tự nhận, tới lượt tự treo); đang dừng -> Start chạy full."""
+        if self._dang_chay():
+            self.log_line("web: Start — tool đang chạy, bỏ qua (tick Treo lại đã tự nhận).")
+        else:
+            self._chay_task("thuong")
+
+    def _xet_treo(self):
+        """30s/lần, chỉ khi bot chạy full đang chạy (đang chờ giờ hẹn): có acc tick "Treo lại" mà nhóm 5 acc của nó đã
+        chạy full xong + rảnh (accounts.cho_treo_duoc / ranh_cho_treo) -> Stop, Start task Treo lại tơ.
+        (Vừa xong 1 acc thì nhan_acc tự chuyển, không chờ 30s.) Tool đang dừng (người dùng Stop) -> để yên."""
+        dang = self._dang_chay()
+        if not dang or any(r.task.variables.get("treo_lai") for r in dang):
+            return
+        if accounts.cho_treo_duoc() and accounts.ranh_cho_treo():
+            self.log_line(f"Có nhóm {accounts.NHOM_TREO} acc đã chạy full xong, có acc tick Treo lại -> chuyển sang treo lại tơ.")
+            self._chay_task("treo")          # ranh_cho_treo: không acc nào đang chạy full -> bot chỉ đang chờ, Stop an toàn
+
+    def _chay_task(self, che_do, lan=0):
+        """Start task của chế độ: đang chạy thì Stop, chờ bot dừng hẳn (tối đa 90s) rồi Start."""
+        if lan == 0 and self._dang_chay():
+            self.stop_all()
+        if self._dang_chay():
+            if lan < 90:
+                QTimer.singleShot(1000, lambda: self._chay_task(che_do, lan + 1))
+            else:
+                self.log_line("Bot chưa dừng sau 90s -> không Start được, bấm Start tay.")
+            return
+        self.task_box.setCurrentText(self.TASK_CHE_DO[che_do])
+        self._tick_mac_dinh()
+        self.start_selected()
+
     # ---- preview --------------------------------------------------------
     def _update_preview(self):
         self.acc_panel.refresh_status()
@@ -689,9 +803,13 @@ class MainWindow(QMainWindow):
             return
         if not name.endswith(".png"):
             name += ".png"
-        os.makedirs(self.cfg.templates_dir, exist_ok=True)
-        path = os.path.join(self.cfg.templates_dir, name)
+        d = self._current_device()
+        thu_muc = self.cfg.templates_pc_dir if d and d.loai_may == "PC" else self.cfg.templates_dir
+        os.makedirs(thu_muc, exist_ok=True)
+        path = os.path.join(thu_muc, name)
         imwrite_unicode(path, crop)
+        for store in (self.orch.templates, self.orch.templates_pc):   # ảnh mới cắt -> lần find sau đọc lại
+            store._cache.pop(name, None)
         self.log_line(f"Đã lưu ảnh mẫu: {path}  ({w}x{h})")
 
     def _save_screenshot(self):
@@ -730,6 +848,17 @@ class MainWindow(QMainWindow):
         for i, d in enumerate(self.devices):
             if d.name == name:
                 self.table.setItem(i, 2, QTableWidgetItem(state))
+        r = self.runners.get(name)
+        treo = bool(r and r.task.variables.get("treo_lai"))
+        from nthbot import xu
+        xu.dat_tool(state == "running", ("treo" if treo else "thuong") if state == "running" else "")
+        # bot đang tự kết thúc (tắt LDPlayer) -> _chay_task(.., 1): chờ dừng hẳn, đừng Stop
+        if state == "done" and treo:   # treo lại xong / nhường acc hẹn giờ -> quay về chạy full
+            self.log_line("Treo lại tơ xong / nhường -> quay về chạy full.")
+            self._chay_task("thuong", 1)
+        elif state == "done" and accounts.cho_treo_duoc():   # nhan_acc: nhóm NHOM_TREO acc chạy full xong -> treo lại
+            self.log_line(f"Nhóm {accounts.NHOM_TREO} acc đã chạy full xong -> treo lại tơ các acc tick.")
+            self._chay_task("treo", 1)
 
 
 def main():
@@ -737,12 +866,17 @@ def main():
     args = [a for a in sys.argv[1:] if a != "--start"]
     cfg_path = args[0] if args else "config.yaml"
     win = MainWindow(cfg_path)
+    phu = [s for s in app.screens() if s != app.primaryScreen()]
+    if phu:   # (02/11 user) có màn phụ -> mở tool ở màn phụ; không có thì ở màn chính như cũ
+        win.move(phu[0].availableGeometry().topLeft())
     win.show()
     from nthbot import xu
-    xu.nghe_lenh(log=lambda m: win.bridge.log.emit("web", m))   # đổi giờ chạy acc public từ web
+    win.bridge.start_web.connect(win.start_web)
+    # đổi giờ / tick treo lại acc public, Start từ web
+    xu.nghe_lenh(log=lambda m: win.bridge.log.emit("web", m), bat_dau=win.bridge.start_web.emit)
     if "--start" in sys.argv:   # python run.py --start: tick mọi instance + Start task đang chọn (mặc định TNT 6 acc)
         def _tu_start():
-            win._check_all(True)
+            win._tick_mac_dinh()
             win.start_selected()
         QTimer.singleShot(1500, _tu_start)
     sys.exit(app.exec())

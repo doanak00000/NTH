@@ -58,10 +58,45 @@ class Device:
     adb_path: str = "adb"
     ld_index: int | None = None     # instance LDPlayer (để tự bật khi Start); None = thiết bị adb thường
     ldconsole_path: str = ""
+    bs_instance: str = ""           # instance BlueStacks (vd Pie64); "" = không phải BlueStacks
+    bs_player: str = ""             # đường dẫn HD-Player.exe
 
     def __post_init__(self):
         if not self.name:
             self.name = self.serial
+
+    # ---- bật/tắt máy ảo (LDPlayer qua ldconsole, BlueStacks qua HD-Player) ----
+    @property
+    def quan_ly(self) -> bool:
+        """Tool tự bật/tắt được máy ảo này."""
+        return self.ld_index is not None or bool(self.bs_instance)
+
+    @property
+    def loai_may(self) -> str:
+        return "BlueStacks" if self.bs_instance else "LDPlayer"
+
+    def may_dang_chay(self) -> bool:
+        if self.bs_instance:
+            from .bluestacks import dang_chay
+            return dang_chay()
+        from .ldplayer import list_instances
+        return any(i.index == self.ld_index and i.running for i in list_instances(self.ldconsole_path))
+
+    def bat_may(self):
+        if self.bs_instance:
+            from .bluestacks import start_instance
+            start_instance(self.bs_player, self.bs_instance)
+        else:
+            from .ldplayer import start_instance
+            start_instance(self.ldconsole_path, self.ld_index)
+
+    def tat_may(self):
+        if self.bs_instance:
+            from .bluestacks import quit_instance
+            quit_instance()
+        else:
+            from .ldplayer import quit_instance
+            quit_instance(self.ldconsole_path, self.ld_index)
 
     # ---- lớp gọi adb thô -------------------------------------------------
     def _run(self, args: list[str], timeout: float = 20, binary: bool = False):

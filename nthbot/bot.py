@@ -10,13 +10,49 @@ import traceback
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .adb import Device
+from .adb import AdbError, Device
 from .engine import BoQuaAcc, Context, Stopped, TaskDone, load_custom_funcs, run_steps
 from .vision import TemplateStore
 
 # Mốc "1 acc/1 vòng hoàn thành": log nào chứa marker này sẽ được UI tách
 # sang ô log vàng riêng (tiến độ tài khoản). Không hiển thị ở log chính.
 ACC_DONE_MARK = "⟦ACC⟧"  # ⟦ACC⟧
+
+
+# (28/10) log chứa các mẫu này -> báo Discord (webhook trong discord_webhook.txt, gitignore; không có file = tắt)
+# (29/10 user) không báo 'Kết thúc:' (hết kho acc = xong bình thường); 'Báo cáo:' chỉ lên khi có ⚠ lỗi acc thường
+_BAO_DISCORD = ("⟦CHỜ CLAUDE⟧", "BỎ QUA", "⚠", "LỖI:",
+                "không boot", "Android đơ", "Chờ Claude quá", "Cứu lỗi: nhờ Claude", "Cứu lỗi: Claude chịu",
+                "Claude lỗi:", "adb rớt", "Không ghi được")
+# log của watchdog / dò banner lúc game đứng im -> không tính là có tiến triển (đếm thời gian kẹt)
+_LOG_LUC_KET = ("Watchdog:", "Hỏi Claude tìm nút", "Claude: ")
+
+
+def _bao_discord(dong: str):
+    """Gửi 1 dòng log lên Discord ở luồng riêng (mạng lỗi/chậm không được làm kẹt bot).
+    Bỏ tên nhân vật '(tên)' sau 'Nhân vật N' -> acc private không lộ tên nhân vật ra ngoài."""
+    import os
+    import re
+    from .orchestrator import app_dir
+    try:
+        with open(os.path.join(app_dir(), "discord_webhook.txt"), encoding="utf-8") as f:
+            url = f.read().strip()
+    except OSError:
+        return
+    if not url:
+        return
+    noi_dung = re.sub(r"(Nhân vật \d+) \([^)]*\)", r"\1", dong)[:1900]
+
+    def gui():
+        import json
+        import urllib.request
+        req = urllib.request.Request(url, json.dumps({"content": noi_dung}).encode("utf-8"),
+                                     {"Content-Type": "application/json", "User-Agent": "NTHBot"})  # thiếu UA -> 403
+        try:
+            urllib.request.urlopen(req, timeout=15).close()
+        except Exception:  # noqa: BLE001 - mất mạng / webhook bị xoá: bỏ qua, log file vẫn còn
+            pass
+    threading.Thread(target=gui, daemon=True).start()
 
 
 def _giu_may_thuc(bat: bool):
@@ -42,6 +78,8 @@ class Task:
 
 class BotRunner:
     """Quản lý vòng đời chạy 1 task trên 1 device."""
+
+    loi_luc = ""   # giờ lỗi vừa báo Discord -> lần Tap kế báo 'chạy lại bình thường'
 
     def __init__(
         self,
@@ -72,6 +110,8 @@ class BotRunner:
         self.last_error = ""
         self.so_lan_hoi = 0       # số lần đã nhờ Claude cứu lỗi trong lượt chạy này
         self.dang_cuu = False     # đang chờ Claude -> watchdog đứng yên, không bấm chen
+        self.ctx = None
+        self.ket_tu = None        # lúc bắt đầu đứng im (watchdog báo) -> quá 3 phút báo Discord 1 lần
 
     # ---- log/state callbacks -------------------------------------------
     def _log(self, msg: str):
@@ -85,10 +125,42 @@ class BotRunner:
                 f.write(f"{self.device.name} {line}\n")
         except OSError:
             pass
+        bao = any(m in msg for m in _BAO_DISCORD)
+        if not msg.startswith(_LOG_LUC_KET):
+            self.ket_tu = None
+        elif msg.startswith("Watchdog:"):
+            if self.ket_tu is None:
+                self.ket_tu = time.time() - 90       # watchdog chỉ lên tiếng sau ~90s đứng im
+            elif self.ket_tu > 0 and time.time() - self.ket_tu >= 180:
+                self.ket_tu, bao = 0, True           # 0 = đã báo lần kẹt này, đừng báo lặp
+                line += " — ⚠ ĐỨNG IM QUÁ 3 PHÚT"
+        if bao and not self._dang_lam_private(msg):
+            _bao_discord(f"{self.device.name} {line}")
+            self.loi_luc = self.loi_luc or time.strftime("%H:%M")
+        elif self.loi_luc and msg.startswith("Tap '"):
+            # (02/11 user) lỗi đã báo mà tool bấm được nút lại -> báo Discord đã chạy lại bình thường
+            if not self._dang_lam_private(msg):
+                _bao_discord(f"{self.device.name} [{time.strftime('%H:%M:%S')}] ✅ Đã chạy lại bình thường "
+                             f"(sau lỗi lúc {self.loi_luc})")
+            self.loi_luc = ""
         if self.on_log:
             self.on_log(self.device.name, line)
         else:
             print(f"{self.device.name}: {line}")
+
+    def _dang_lam_private(self, msg: str) -> bool:
+        """Dòng log thuộc acc private (tên che 'tk testN' / acc đang làm là private) -> KHÔNG báo Discord."""
+        if "tk test" in msg:
+            return True
+        v = self.ctx.variables if self.ctx else {}
+        user = v.get("_zing_user") or v.get("_dn_lai")
+        if not user:
+            return False
+        try:
+            from . import accounts
+            return bool((accounts.get(user) or {}).get("private"))
+        except Exception:  # noqa: BLE001 - đọc kho lỗi: thà không báo còn hơn lộ acc private
+            return True
 
     def _set_state(self, state: str):
         self.state = state
@@ -119,7 +191,7 @@ class BotRunner:
         tắt), chờ tới `som` giây trước giờ hẹn mới bật: đỡ tốn RAM cả buổi (Start 7h, acc hẹn 10h -> 9h57 mới bật)."""
         from datetime import datetime, timedelta
         from . import accounts
-        if not any(isinstance(s, dict) and (s.get("python") or {}).get("func") == "nhan_acc" for s in self.task.steps):
+        if not any(isinstance(s, dict) and (s.get("python") or {}).get("func") == "nhan_acc" for s in self.task.steps)                 or self.task.variables.get("treo_lai"):   # chế độ Treo lại tơ không theo giờ hẹn
             return
         now = datetime.now()
         hen = accounts.hen_som_nhat(now)
@@ -134,17 +206,17 @@ class BotRunner:
             if self.stop_event.wait(min(30.0, max(1.0, (mo_luc - datetime.now()).total_seconds()))):
                 raise Stopped()
 
-    def _bat_ldplayer(self, timeout: float = 240):
-        """Instance LDPlayer đang tắt -> bật lên, chờ Android boot xong + adb kết nối được."""
-        from .ldplayer import list_instances, start_instance
+    def _bat_ldplayer(self, timeout: float = 240, treo: float = 60):
+        """Instance LDPlayer đang tắt -> bật lên, chờ Android boot xong + adb kết nối được.
+        (04/11) Máy báo ĐANG CHẠY mà adb im `treo` giây -> Android đơ (ldconsole vẫn android_started=1, adb offline /
+        lệnh treo) -> tắt hẳn rồi bật lại 1 lần, thay vì ngồi chờ hết timeout rồi báo lỗi."""
         d = self.device
-        inst = next((i for i in list_instances(d.ldconsole_path) if i.index == d.ld_index), None)
-        if inst is None:
-            raise RuntimeError(f"Không thấy instance LDPlayer #{d.ld_index}")
-        if not inst.running:
-            self._log("Bật LDPlayer...")
-            start_instance(d.ldconsole_path, d.ld_index)
+        da_bat = not d.may_dang_chay()
+        if da_bat:
+            self._log(f"Bật {d.loai_may}...")
+            d.bat_may()
         end = time.time() + timeout
+        han_treo = time.time() + treo
         while time.time() < end:
             if self.stop_event.is_set():
                 raise Stopped()
@@ -153,21 +225,35 @@ class BotRunner:
                     return
             except Exception:  # noqa: BLE001 - đang boot, adb chưa sẵn sàng
                 pass
+            if not da_bat and time.time() > han_treo:
+                da_bat = True
+                self._log(f"{d.loai_may} đang chạy nhưng adb không phản hồi {treo:.0f}s -> sập, tắt hẳn rồi bật lại")
+                try:
+                    d.tat_may()
+                except Exception as e:  # noqa: BLE001 - quit lỗi vẫn thử bật, hết timeout thì báo lỗi như cũ
+                    self._log(f"Tắt {d.loai_may} lỗi: {e}")
+                for _ in range(10):      # chờ tắt hẳn rồi mới bật, bật sớm ldconsole bỏ qua lệnh
+                    if not d.may_dang_chay():
+                        break
+                    time.sleep(3)
+                time.sleep(5)
+                d.bat_may()
+                end = time.time() + timeout
             time.sleep(3)
-        raise RuntimeError(f"LDPlayer #{d.ld_index} không boot xong sau {timeout:.0f}s")
+        goi_y = " (đã bật ADB trong BlueStacks Settings > Advanced chưa?)" if d.bs_instance else ""
+        raise RuntimeError(f"{d.loai_may} {d.name} không boot xong sau {timeout:.0f}s{goi_y}")
 
     def _tat_ldplayer(self):
         """Chạy xong hết -> tắt instance LDPlayer của máy này (LDPlayer chạy lâu rò bộ nhớ: 19/10 ăn ~52 GB làm adb
         chết). Start lần sau _bat_ldplayer tự bật lại. Instance không quản lý qua ldconsole (ld_index None) -> để yên."""
         d = self.device
-        if d.ld_index is None:
+        if not d.quan_ly:
             return
-        from .ldplayer import quit_instance
         try:
-            quit_instance(d.ldconsole_path, d.ld_index)
-            self._log("Đã tắt LDPlayer để giải phóng bộ nhớ.")
+            d.tat_may()
+            self._log(f"Đã tắt {d.loai_may} để giải phóng bộ nhớ.")
         except Exception as e:  # noqa: BLE001 - tắt không được thì thôi, việc chính đã xong
-            self._log(f"Không tắt được LDPlayer: {e}")
+            self._log(f"Không tắt được {d.loai_may}: {e}")
 
     def _watchdog(self, ctx, chu_ky: float = 15, ket: float = 90):
         """Chạy song song: bot không có tiến triển (không ghi log) quá `ket` giây -> gần như chắc chắn
@@ -257,6 +343,8 @@ class BotRunner:
         "  BAM x y        - bấm 1 điểm (vd nút OK / X / Đóng của popup đang che)\n"
         "  VE_MAN_CHINH   - đóng hết trang con, về màn hình chính\n"
         "  MO_LAI_GAME    - tắt và mở lại game (game treo / màn đen / văng)\n"
+        "  KHOI_DONG_LAI_LD - khởi động lại cả LDPlayer (Android đơ: 'Process system isn't responding', màn home"
+        " LDPlayer, mở lại game không ăn)\n"
         "  LAM_LAI        - không cần làm gì, chỉ làm lại bước (lỗi thoáng qua)\n"
         "  BO_QUA         - không cứu được (sai mật khẩu, captcha, bảo trì...) -> bot bỏ qua tài khoản này\n"
         "KHÔNG sửa file nào. Dòng CUỐI CÙNG của câu trả lời chỉ ghi đúng thao tác, vd: BAM 480 304")
@@ -284,8 +372,9 @@ class BotRunner:
         try:
             imwrite_unicode(anh, self.device.screencap())
         except Exception as e:  # noqa: BLE001 - LDPlayer treo / mất kết nối
-            self._log(f"Cứu lỗi: không chụp được màn hình ({e}) -> bỏ qua")
-            return False
+            # (28/10) không chụp được = LDPlayer đơ hẳn -> khởi động lại thay vì bỏ acc
+            self._log(f"Cứu lỗi: không chụp được màn hình ({e}) -> khởi động lại LDPlayer (Android đơ)")
+            return self._mo_lai(ctx, ld=True)
         try:
             with open(os.path.join(goc, "logs", time.strftime("%Y-%m-%d") + ".log"), encoding="utf-8") as f:
                 cuoi = "".join(l for l in f.readlines() if l.startswith(self.device.name))[-4000:]
@@ -321,20 +410,29 @@ class BotRunner:
         elif dong == "VE_MAN_CHINH":
             self._log("Cứu lỗi: Claude bảo VỀ MÀN HÌNH CHÍNH")
             ctx.custom_funcs["ve_man_hinh_chinh"](ctx)
-        elif dong == "MO_LAI_GAME":
-            self._log("Cứu lỗi: Claude bảo MỞ LẠI GAME")
-            self.device.stop_app(ctx.package)
-            ctx.sleep(3)
-            ctx.custom_funcs["khoi_dong_game"](ctx)
-            from . import accounts
-            user = ctx.variables.get("_zing_user")
-            if user and accounts.get(user):   # mở lại game = về màn đăng nhập -> vào lại đúng tk (nhân vật chưa làm)
-                ctx.custom_funcs["doi_tk_zing"](ctx, accounts.get(user), tu_duoi=True)
+        elif dong in ("MO_LAI_GAME", "KHOI_DONG_LAI_LD"):
+            self._log("Cứu lỗi: Claude bảo " + ("MỞ LẠI GAME" if dong == "MO_LAI_GAME"
+                                                 else "KHỞI ĐỘNG LẠI LDPLAYER (Android đơ)"))
+            return self._mo_lai(ctx, ld=dong == "KHOI_DONG_LAI_LD")
         elif dong == "LAM_LAI":
             self._log("Cứu lỗi: Claude bảo LÀM LẠI bước")
         else:
             self._log(f"Cứu lỗi: Claude chịu ({dong[:60] or 'không trả lời'}) -> bỏ qua")
             return False
+        return True
+
+    def _mo_lai(self, ctx, ld=False) -> bool:
+        """Tắt mở lại game (ld=True: khởi động lại cả LDPlayer) rồi vào lại đúng tk đang làm (nhân vật chưa làm)."""
+        if ld:
+            ctx.custom_funcs["khoi_dong_lai_ldplayer"](ctx)
+        else:
+            self.device.stop_app(ctx.package)
+            ctx.sleep(3)
+        ctx.custom_funcs["khoi_dong_game"](ctx)
+        from . import accounts
+        user = ctx.variables.get("_zing_user")
+        if user and accounts.get(user):   # mở lại game = về màn đăng nhập -> vào lại đúng tk (nhân vật chưa làm)
+            ctx.custom_funcs["doi_tk_zing"](ctx, accounts.get(user), tu_duoi=True)
         return True
 
     def _cho_claude(self, ctx, step, loi, phut: float = 15) -> str:
@@ -401,8 +499,9 @@ class BotRunner:
             path = os.path.join(app_dir(), "logs", time.strftime("bao_cao_%Y%m%d.md"))
             with open(path, "w", encoding="utf-8") as f:
                 f.write(noi_dung)
-            so = noi_dung.count("\n- ⚠")
-            self._log(f"Báo cáo: {path}" + (f" — ⚠ {so} nhân vật lỗi" if so else " — mọi nhân vật đủ ✓"))
+            # chỉ đếm lỗi acc thường: lỗi acc private ('## tk testN') không báo (Discord / log)
+            so = sum(muc.count("\n- ⚠") for muc in noi_dung.split("\n## ")[1:] if not muc.startswith("tk test"))
+            self._log(f"Báo cáo: {path}" + (f" — ⚠ {so} nhân vật lỗi" if so else " — acc thường đủ ✓"))
         except Exception as e:  # noqa: BLE001 - báo cáo lỗi không được làm hỏng kết thúc task
             self._log(f"Không ghi được báo cáo: {e}")
 
@@ -411,7 +510,12 @@ class BotRunner:
         (doi_tk_zing tự đăng xuất từ màn hình nào cũng được). Lỗi lúc đăng nhập: nhan_acc đã đánh ✗ sẵn."""
         from . import accounts
         user = ctx.variables.pop("_zing_user", None)
-        ctx.variables.pop("_dn_lai", None)   # bỏ hẳn tk đăng nhập lỗi, vòng sau không thử lại
+        dn_lai = ctx.variables.pop("_dn_lai", None)   # bỏ hẳn tk đăng nhập lỗi, vòng sau không thử lại
+        if ctx.variables.get("treo_lai"):    # chế độ Treo lại tơ: chỉ bỏ tick "Treo lại", acc ✓ vẫn ✓
+            if user or dn_lai:
+                accounts.set_treo(user or dn_lai, "")
+            self._log(f"⟦ACC⟧ BỎ QUA treo lại tơ tài khoản {accounts.ten_hien(user or dn_lai or '')}: {loi}")
+            return
         idx = int(ctx.variables.get("_acc_idx", 0) or 0)
         ctx.variables["_acc_idx"] = 0
         phieu = ctx.variables.pop("_phieu", {})
@@ -428,7 +532,7 @@ class BotRunner:
         self._log(f"Bắt đầu task '{self.task.name}'")
         _giu_may_thuc(True)
         try:
-            if self.device.ld_index is not None:
+            if self.device.quan_ly:
                 self._cho_gio_hen()
                 self._bat_ldplayer()
             if not self.device.connect():
@@ -445,6 +549,7 @@ class BotRunner:
                 log=self._log,
                 custom_funcs=load_custom_funcs(self.custom_path),
             )
+            self.ctx = ctx                # _log cần biết acc đang làm có private không (không báo Discord)
 
             log_goc = ctx.log
 
@@ -457,7 +562,7 @@ class BotRunner:
             threading.Thread(target=self._watchdog, args=(ctx,), daemon=True).start()
 
             repeat = self.task.repeat
-            count = bo_qua_lien = 0
+            count = bo_qua_lien = ld_sap = 0
             moc_code = self._moc_code()
             while repeat == 0 or count < repeat:
                 ctx.check_stop()
@@ -474,7 +579,16 @@ class BotRunner:
                     self._log(f"--- Vòng task #{count + 1} ---")
                 try:
                     run_steps(self.task.steps, ctx)
-                    bo_qua_lien = 0
+                    bo_qua_lien = ld_sap = 0
+                except AdbError:
+                    # (30/10) máy ảo LDPlayer sập (mất Ld9BoxHeadless, adb offline mãi) -> khởi động lại LD, làm lại
+                    # vòng từ khoi_dong_game (acc dở vẫn của máy này); sập 2 lần liền thì dừng máy như cũ
+                    ld_sap += 1
+                    if ld_sap > 1 or "khoi_dong_lai_ldplayer" not in ctx.custom_funcs:
+                        raise
+                    self._log("adb offline sau 3 lần nối lại -> LDPlayer sập, khởi động lại rồi làm lại vòng")
+                    ctx.custom_funcs["khoi_dong_lai_ldplayer"](ctx)
+                    continue
                 except TaskDone as e:
                     self._log(f"Kết thúc: {e}")
                     break

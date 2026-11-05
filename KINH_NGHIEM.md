@@ -42,6 +42,21 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - (24/10) **Chọn 1 acc** trong bảng → ô dưới bảng hiện từng nhân vật + xu mới nhất (+ chưa rút, ngày nếu không phải
   hôm nay) và tổng xu, đọc `xu_web/xu.json` (`xu.xu_moi_nhat`). Acc private (từ 24/10) cũng quét xu nhưng ghi
   `xu_private.json` trên máy (gitignore), không push, không đụng xu_web.
+- (26/10) **Treo lại tơ** (1 nút Start duy nhất, chạy full luôn ưu tiên): tick cột "Treo lại" (UI hoặc web, acc ✓
+  cũng được). Kho xếp theo giờ như UI/web, chia **nhóm 5 acc** (31/10, trước là 4; `accounts.NHOM_TREO`); chạy full xong cả nhóm (✓/✗/bỏ tick Chọn) thì
+  `nhan_acc` raise TaskDone → UI Start task `treo_lai_to.yaml` treo lại acc tick trong nhóm (`accounts.cho_treo_duoc`),
+  xong tự quay về chạy full. Treo lại: đủ 6 nhân vật từ dưới lên (vẫn Xông Pha từng nhân vật), **tối đa 4 ô/nhân vật**,
+  KHÔNG đụng status / nv_xong / giờ hẹn (trường `treo` riêng), xong acc tự bỏ tick.
+  Acc hẹn giờ tới / còn < 30 phút → chạy full trước (`ranh_cho_treo`, xét trước mỗi acc treo); acc "chạy ngay" chờ.
+  Acc chờ treo kế là PUBLIC → treo trước cả acc PRIVATE hẹn giờ (private chạy full sau).
+  (30/10 user) Đang chạy acc PRIVATE mà acc PUBLIC hẹn giờ còn ≤ 15 phút (`_public_sap_toi`) → xong nhân vật đang
+  làm thì `doi_acc` dừng acc private ở "dở x/6", `nhan_acc` không nhận private, chờ tới giờ chạy public; xong public
+  thì claim lấy lại acc private dở (chọn dòng cuối như thường).
+  (27/10) Giờ hẹn tính theo NGÀY GAME (sang ngày lúc 5h, `gio_hom_nay`): trước đây qua 0h acc hẹn 23:26 chưa kịp
+  chạy bị tính sang 23:26 hôm sau (bỏ lượt). Giờ 00:00-04:59 = đêm cuối của ngày game.
+  (26/10) Bấm Stop lúc đang đăng nhập từng đánh ✗ acc (nhan_acc bắt cả Stopped) → giờ bỏ qua Stopped.
+  Tick từ web lúc tool đang chờ giờ hẹn → UI xét 30s/lần (`_xet_treo`). Web Start: tool đang dừng → chạy full;
+  đang chạy → bỏ qua (không cắt ngang acc). UI phải đang mở.
 - **Giãn cách treo tơ**: Treo liền / **30s (mặc định từ 19/10)** / 40s / 45s / 1 / 3 / 5 phút — chờ giữa 2 lần treo 1 ô.
 - **Tiến độ tài khoản** (ô chữ vàng): mỗi máy 1 khối "Tài khoản X" + "Nhân vật N (tên) đã hoàn thành ✓";
   sang acc mới thì khối của máy đó xoá và bắt đầu lại.
@@ -79,6 +94,8 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   → **màn server** → icon người góc phải trên (`dang_xuat_zing.png`, 929,28) = đăng xuất Zing ngay, không hỏi.
 - Form VNG: `chon_zing_id` → form ZingID (`form_zing`) → ô tk (480,212), ô mk (480,260) → Đăng nhập.
 - **Bấm ZingID có thể TỰ ĐĂNG NHẬP tk lần trước** (vào thẳng màn server) → đăng xuất rồi thử lại.
+- (05/11) Bấm ZingID mà form **không hiện** (chỉ còn màn nền) = lỗi máy, không phải lỗi tk → `doi_tk_zing` tự khởi động
+  lại LDPlayer rồi thử lại (tối đa 2 lần). Vẫn hỏng thì báo lỗi nhưng **không đánh ✗ tk**, lần sau thử lại đúng tk đó.
 - Tk mới lần đầu trên máy → popup điều khoản (tick + Đồng ý) — bot tự làm.
 - **Banner hay bật ngay sau khi bấm Xông Pha ở màn server**, đóng xong có thể bị trả về màn server →
   `doi_tk_zing` bước sau đăng nhập là **vòng xử lý theo màn hình**: server → Xông Pha, banner → X,
@@ -101,6 +118,8 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   - List không cuộn được (tk ít nhân vật) / bấm không đổi → dự phòng chọn theo tên (`_chon_theo_ten`).
   - (23/10) Tk **1 nhân vật**: bấm dòng nào tên cũng không đổi → cũ coi cả dòng 1 là "trống" → ✓ sai (1 tk private
     bỏ 2 ngày). Dòng 1 luôn có nhân vật → không bao giờ coi là trống.
+  - (01/11) khadoan1608 có 'Lâm My' và 'Lâm Mỳ Mỳ': `xu.cung` luật "đoạn chung ≥ 85% tên ngắn" coi 'lammy' ⊂ 'lammymy'
+    là trùng → ✓ 5/6. Giờ luật đó chỉ áp khi tên ngắn ≥ 80% tên dài.
   - Dừng tk khi đủ 6 lượt (đếm lượt). Bỏ dở 1 nhân vật giữa chừng thì nó KHÔNG được đếm.
 - Toạ độ dòng đo trên acc 6 nhân vật: chưa cuộn y≈115 / 201 / 288 / 369 (dòng 4 chỉ hiện 1 phần 358–381);
   sau 1 lần cuộn: 152 / 240 / 320.
@@ -118,6 +137,7 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   (≥190), nét bút/nền tối hơn → lấy cụm cột trắng lớn nhất làm vùng chữ, xoá phần ngoài, đọc ảnh Otsu (giữ dấu) +
   lề trắng 20px: 12 tên thật 7/12 → 10/12 (bỏ dấu 11/12). Ngưỡng cố định thay Otsu thì sạch rác nhưng MẤT DẤU.
   `tessdata_best` vie (12MB) KHÔNG tốt hơn bản fast đang dùng. Vẫn sai giữa chữ ('LoveU'→'LowU'/'LoeU').
+  (02/11) Giữ thêm cụm chữ sát BÊN TRÁI cụm chính (cách ≤10px, `_cum_chu`): "Sư Tán" cách 9px bị cắt còn "Tán" → Y Tán/Sư Tán trùng tên, mylu1108 chỉ 5/6.
 - Đổi nhân vật: Cài đặt → "Chuyển đổi nhân vật" (846,147) → Xác nhận (KHÔNG phải nút đổi tài khoản).
 - Vào nhân vật xong game hay bật **trễ ~3s** trang "Giang Hồ - Nội Dung Mới" (chỉ có nút back) → đầu mỗi nhân vật
   chờ 3s rồi `ve_man_hinh_chinh`.
@@ -146,6 +166,15 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - Hảo Cảm (`hao_cam`, 21/10 chuyển từ YAML sang hàm để Thanh Nhai Thư gọi lại được khi sót).
 - (24/10) Popup **"Nhắc nhở" Giải Đấu Bang Hội** (không có X) bật giữa lúc mua đá → kẹt, Claude cứu bấm Hủy Bỏ
   (357,342). Đã thêm mốc `moc_nhac_nho.png` vào `_MOC_BANNER` → tự Hủy Bỏ.
+- (01/11) Banner **"Nhất Niên Fashion Week"** (26/10–06/11) sau Xông Pha: không thấy nút X → watchdog + Claude cứu
+  ~2 phút. Đóng ở góc phải trên (765,108). Thêm mốc `moc_fashion_week.png` vào `_MOC_BANNER`.
+- (04/11) Banner **"Nhất Niên Đại Yên 1st"** (28/10–14/11) sau Xông Pha: X trắng ở (850,77) chìm khi nền game sáng
+  → kẹt ~4 phút (Claude trả NONE 2 lần). Thêm mốc `moc_dai_yen.png` (chữ tiêu đề) → bấm (850,77).
+- (31/10) Popup đó đè lên **bảng Hoạt động đang mở** (20:00) → `_tim_nut_x` khớp ✕ thu bảng, bỏ ✕ mà bỏ luôn mốc
+  banner → CHỜ CLAUDE. Giờ lọc ✕ trước khi xét mốc. Thêm: `mo_hoat_dong` thấy bảng mở sẵn thì không bấm (bấm = thu lại).
+- (31/10) Popup đó bật lúc đang **treo bán** (20:30) → `ve_man_hinh_chinh` bấm back hụt đủ 8 lần dưới popup, vẫn kẹt
+  trang Giao Dịch → `doi_acc` bấm (918,21) trúng **'+' tiền → mở trang Nạp** (3 lần liền). Giờ bấm back mà màn không
+  đổi thì `dong_banner` trước. Popup này hiện lại nhiều lần quanh 20:00-20:30 (Giải Đấu Bang Hội).
 - Lần đầu mở nghề lạ (vd Câu Cá) có popup "Nhắc nhở" → **Hủy Bỏ**, đừng nhận.
 
 ### Chế tơ
@@ -164,6 +193,8 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   giảm. Trước đây bot bấm 3 lần + chế tơ lần 2 còn mua thêm đá vô ích (tk test3). Giờ: bấm xong mà hoạt lực không giảm
   → phiếu `nghề nghiệp: failed` + ảnh, dừng; chế tơ lần 2 của nhân vật đó bỏ qua (vẫn mở trang chế cho treo_to).
   Đá vẫn bị mua ở lần 1 (chưa biết túi đầy trước khi chế). Cần người dùng dọn túi.
+- (01/11) OCR đọc hoạt lực 242 thành '22' → chế 4 lần xong còn 222 bị tưởng "không giảm" → báo túi đầy SAI, bỏ chế
+  lần 2 (Lâm Mỳ Mỳ). Giờ chỉ coi là túi đầy khi hoạt lực BẰNG lần trước; tăng = lần đọc trước sai → chế tiếp.
 - (20/10) **Bẫy làm lại bước**: bước `che_to` lỗi được làm lại khi đang ở trang Nghề Nghiệp → bấm (920,31) "nút Hoạt
   động" thì ở trang đó lại là **số hoạt lực** → bật tooltip "Hoạt Lực", không mở được bảng Hoạt động → bỏ cả tk
   (doangia1608). `_mo_trang_che` giờ `ve_man_hinh_chinh` trước. Hàm nào bắt đầu bằng toạ độ màn chính nên về màn chính trước.
@@ -191,6 +222,8 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - Kệ đầy → thông báo thoáng qua "Cửa hàng của bạn không có ô hiệu lực để lên kệ" (`ke_day.png`) — **đầy là bình thường**.
 
 ### Thanh Nhai Thư
+- (01/11 user) **Chủ nhật** (ngày game, CN 5h → T2 4h59): nhận mốc ngày xong thì bấm ô vật phẩm "Tiến Độ Điểm Tuần"
+  (626,490) — toạ độ cố định vì icon quà đổi theo tuần; KHÔNG bấm dòng tiêu đề (620,452). `_nhan_qua_tuan`. Popup quà tuần là "Nhận Thưởng" (`nhan_thuong_dong.png`), KHÁC "Chúc Mừng Nhận".
 - 5 ô Đề Cử: ô đã làm hiện chữ **"Nhận"** → bấm để cộng điểm. Ô **đã nhận (dấu tích) mà bấm → game chuyển sang
   hoạt động đó** (vd mở trang Nghề Nghiệp) → chỉ bấm khi thấy `o_nhan.png`.
 - Có điểm mới nhận được mốc: hàng dưới "Tiến Độ Hoạt Động Ngày" 4 mốc tại x = 205, 278, 350, 424 (y 488).
@@ -206,7 +239,7 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   (ngưỡng 0.8). Nút roll ≥0.82, ô khác ≤0.35 (ngưỡng 0.6). `o_nhan.png` chỉ khớp 0.33 → không dùng.
   `roll_thanh_nhai_thu` mỗi vòng: 1 trong 4 nhiệm vụ bot tự làm mà ô vẫn CHƯA LÀM = đã sót → `_lam_lai_nv_tnt`: về màn
   chính, gọi lại `chup_anh` / `mong_hoa_luc` / `hao_cam` / `che_to`, mở lại TNT, nhận (mỗi nhiệm vụ 1 lần/nhân vật;
-  thời gian làm lại không tính vào hạn 180s). Phiếu ghi `làm lại <nhiệm vụ>: 1`. Đã chạy thật 21/10 (KhâuSơnTùng
+  thời gian làm lại không tính vào hạn 180s). Phiếu ghi `làm lại <nhiệm vụ>: 1`. Đã chạy thật 21/10 (tk test
   tk test1, gọi roll TRƯỚC khi làm gì): tự làm lại cả 4 rồi nhận 4/4. Thử nhận diện trên 56 ô thật × 5 vị trí: đúng hết.
   (24/10) Làm lại xong thì xoá phiếu 'failed' cũ của nhiệm vụ đó (trước đây TNT 4/4 mà nhân vật vẫn ⚠).
   Các nhiệm vụ khác trong Đề Cử (Cốt Truyện, Thi Đấu, Phó Bản, Trang Viên, Tiệc Trang Viên, Hoạt Động Bang, Thám Hiểm,
@@ -220,6 +253,19 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   (gray > 200) ở góc trên-phải (740,0,220,160), ngưỡng 0.87 (banner ≥ 0.89, màn thường ≤ 0.82).
 - Không mẫu nào khớp → **hỏi Claude** (`_hoi_claude_nut_x`, `claude -p` dùng subscription local): trả `X,Y` hoặc `NONE`,
   ~8s. Đúng trên mọi banner thật đã thử, trả NONE cho màn chính / bảng bán (prompt dặn "trang chức năng không tính").
+
+### Bản PC (02/11 — giả lập LDPlayer/BlueStacks kẹt ở SDK VNG, điện thoại thật vẫn chơi được)
+- Thiết bị `[PC] Nghịch Thủy Hàn` (`nthbot/pc.py`): cửa sổ game để **1280x720** (đúng 16:9), tool chụp PrintWindow
+  thu về 960x540 + click/kéo PostMessage (không chiếm chuột). Game co cửa sổ về 0x0 khi bị ẩn -> tool tự trả 1280x720.
+- Trang toàn màn (Du Ngoạn, chế, chợ, bảng bán, Thanh Nhai Thư, chọn nhân vật, màn server) **giống hệt mobile**.
+  Khác: HUD màn chính + bảng mở từ cạnh (Hoạt động dạng lưới, Xã Giao) nhỏ ~0.78 -> ảnh mẫu `templates_pc/`
+  + `pc: {...}` trong task (Du Ngoạn 665,285; máy ảnh 26,513; Xã Giao 364,506, tab MHL 22,99, thu 508,246).
+- Cài đặt PC **đổi chỗ**: 'Chuyển đổi nhân vật' (439,147), 'Giao diện đăng nhập' (844,147) — 846,147 của mobile
+  trên PC là ĐĂNG XUẤT tk Zing.
+- Đăng nhập: icon người ở màn server mở cửa sổ riêng `VNGGamesSDK_Dialog` (391x396) **không nhận PostMessage** ->
+  click/gõ thật (`click_that`/`go_that`, mượn chuột ~0.5s). tk đã từng đăng nhập nằm sẵn trong list (OCR dòng
+  y=124+48k) -> bấm là vào; tk mới: Add New -> ZingID -> gõ -> Login -> lần đầu có trang điều khoản (tick + Đồng ý).
+- Chưa làm: tự mở game qua launcher Level Up (mở tay trước khi Start), tk email trên PC.
 
 ---
 
@@ -252,6 +298,9 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   Khoá nhân vật theo **tên OCR**, không theo số thứ tự: list nhân vật xếp theo lần chơi gần nhất (dòng 1 =
   nhân vật chơi cuối) nên nv1..6 đổi mỗi ngày. Tên tk Zing hiện đầy đủ (chủ tool muốn vậy).
   OCR rỗng cả 2 số (màn chờ che) -> không ghi. Push lỗi chỉ log "xu: push GitHub lỗi".
+- (30/10) Khởi động lại LDPlayer giữa 2 acc xong, đăng nhập được ~1 phút thì **máy ảo sập** (mất `Ld9BoxHeadless`,
+  `dnplayer` còn, adb `offline` mãi) -> AdbError 3 lần lọt khỏi vòng task, dừng cả máy. `bot.py` giờ bắt AdbError ở
+  vòng task: khởi động lại LDPlayer 1 lần rồi làm lại vòng (sập 2 lần liền mới dừng).
 - (19/10 23:19) **LDPlayer rò bộ nhớ**: chạy ~11 tiếng liền, `Ld9BoxHeadless` commit ~52 GB -> commit Windows còn
   0,3 GB -> adb server chết ("daemon not running... connection reset"), Python mới lỗi OpenBLAS cấp phát bộ nhớ.
   Tắt LDPlayer (`ldconsole quit --index 0`) -> trống lại 22 GB; Start tool tự bật lại. (20/10) Bot chạy xong
@@ -270,6 +319,8 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - (19/10) Sai mật khẩu ZingID: SDK vẫn về màn server, bấm Xông Pha thì VNG hiện popup "Đăng nhập thất bại...
   [7020-13]" -> trước đây bot bấm Xông Pha sau popup 3 phút rồi mới lỗi. Giờ thấy `dn_that_bai.png` -> bấm OK, báo
   lỗi ngay (acc thành ✗ lỗi, nhan_acc bỏ qua). Gặp: myxinh1608 (mật khẩu trong kho sai).
+  (01/11 mylu1108 sai mk) tk kế (tk test3) gặp popup "[7002] Bạn đã bỏ qua đăng nhập bằng ZingID!" (OK 480,304) ->
+  Claude cứu 2 lần (~1,5 phút). Giờ `doi_tk_zing` thấy `bo_qua_zing_7002.png` cũng bấm OK như `dn_that_bai.png`.
 - (20/10) So tên **gần đúng** dùng chung 1 luật `xu.cung` (trên `xu._chuan`) cho cả chọn nhân vật lẫn web: giống
   >= **0.85** HOẶC đoạn chung dài nhất >= 85% tên ngắn hơn. Ngưỡng cũ 0.9 làm 'KRIXI'->'KRXI' (0.89),
   'NhưƠïnhY'->'NhữDinhY' bị tưởng nhân vật mới -> **làm lại lần 2** (cùng xu 755K). Chỉ so trong 1 tk; khác người
@@ -278,9 +329,14 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - (19/10, thay 20/10) Cả NHÂN VẬT ĐẦU (vừa đăng nhập) cũng chọn dòng cuối (`nhan_acc tu_duoi: true` -> `doi_tk_zing`
   -> `_chon_tu_duoi`). Tk đã làm hết hôm nay (vd Reset rồi chạy lại) -> `doi_tk_zing` trả "het" -> `nhan_acc` ✓ tk,
   lấy tk khác (trước đây vào dòng 1 làm lại nhân vật đã xong). Cách chọn hiện tại: mục 4 "Danh sách nhân vật".
+- (03/11) **Đá trắng tím (Long Đảm Thạch)**: đá vàng không có lô <= 83 -> `che_to` bấm TỌA ĐỘ (245,86) lên dòng 1
+  (Tơ Phiêu Vân-2 cấp 11, 5 hoạt lực/lần, thêm tơ 20% thay vì 40%; ảnh dòng giống hệt các dòng khác nên không dò ảnh),
+  ô đá vẫn ở (525,322), Cách nhận -> Khu Giao Dịch -> chợ y hệt đá vàng (giá ô đầu đọc OCR được), mua <= 82.
+  Nhớ theo nhân vật: chế tơ lần 2 vào thẳng dòng 1. Sang nhân vật khác thử lại đá vàng trước.
+- (04/11) Báo lỗi giả (BAO_GIA_FAILED / _bao_loi_gia_public) ĐÃ GỠ theo ý user. Phiếu failed/3/4 ghi trước 11h 04/11 có thể là giả.
 - (19/10) **Hẹn giờ chạy acc**: cột "Giờ" trên UI (trống = chạy ngay, mặc định). Kho lưu `gio` (HH:MM) + `gio_ngay`
   (ngày đặt/cập nhật). ~~+10 phút/ngày~~ (bỏ 19/10): bot xong **nhân vật 1** của acc hẹn giờ -> `accounts.dat_gio`
-  đặt giờ hẹn = giờ xong đó + 3 phút (23/10 user chốt, trước +10) -> mai bắt đầu đúng lúc hàng treo hôm trước vừa hết hạn (vào sớm thì kệ còn đầy hàng chưa
+  đặt giờ hẹn = đúng giờ xong đó (3/11 user bỏ +3 phút; trước đó +3, +10) -> mai bắt đầu đúng lúc hàng treo hôm trước vừa hết hạn (vào sớm thì kệ còn đầy hàng chưa
   hết hạn, không treo được). Không chạy ngày nào thì giờ giữ nguyên; giờ trôi muộn dần -> người dùng gõ lại.
   UI: ô Giờ theo file (bot dời giờ); chỉ ô người dùng vừa gõ (`_DA_SUA`) mới được Lưu ghi đè. Xoá dấu `_DA_SUA`
   cũng phải `blockSignals` (self-check bắt được: không chặn thì mọi ô bị coi là "vừa sửa", giờ bot dời bị đè).
@@ -314,6 +370,14 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - (19/10) Tên nhân vật OCR ở **ô tên góc phải dưới** màn chọn nhân vật (700,398,130,24), không đọc ở dòng trong list
   (dòng 4 hiện 1 phần -> mỗi lần 1 tên). Quét xu 19/10: cuộn hụt cả nv5, nv6 -> vào lại nv4, ghi trùng xu
   (gốc là `keo_that` thiếu SLOT/PRESSURE, sửa 20/10).
+- (28/10) Bật LDPlayer xong LDStore tự mở đè game -> game nền ANR mãi, Android cũng "Process system isn't responding" -> kẹt khoi_dong_game 300s. `khoi_dong_game` giờ thấy app khác ở màn trước thì mở lại game (LDStore thì force-stop trước); quá 150s game chưa lên (thường ~45s) = Android đơ -> tự khởi động lại LDPlayer 1 lần. Đã `pm disable-user com.android.ld.appstore` trên LDPlayer14 (bật lại: `pm enable`).
+- (02/11) Game ra bản vá tài nguyên (sáng T2, `Patch/version.info` mới) -> lần mở đầu "Đang dọn dẹp tệp và cục bộ" ăn 6 nhân CPU (load 22), lâu > 150s, adb rớt `device offline` -> tool khởi động lại LDPlayer giữa chừng, game dọn lại từ đầu, lặp. `khoi_dong_game` giờ thấy `moc_don_tep.png` thì chờ (tối đa 30 phút), không khởi động lại, chịu adb rớt.
+- (28/10) **Báo Discord**: `bot._log` gặp CHỜ CLAUDE / BỎ QUA / ⚠ / LỖI: / Báo cáo / Kết thúc / Android đơ -> gửi webhook (`discord_webhook.txt`, gitignore; tên nhân vật bị cắt). Acc private KHÔNG báo (`_dang_lam_private`). Thêm: bước lỗi phải nhờ Claude cứu, adb rớt, Claude lỗi, đứng im ≥3 phút (2 lần watchdog liền, báo 1 lần/lần kẹt). Claude cứu lỗi (`claude -p`) có thêm thao tác `KHOI_DONG_LAI_LD`; không chụp được màn hình -> khởi động lại LDPlayer thay vì bỏ acc.
+- (02/11) **Màn hình phụ**: có màn phụ thì UI tool mở ở đó (`ui/app.py main`), LDPlayer bật xong dời sang đó 3 lần trong ~20s (`ldplayer._doi_sang_man_phu`, gọi trong `start_instance`). Màn phụ tắt -> Windows tự kéo về màn chính.
+- (02/11) Đã báo lỗi lên Discord -> lần `Tap '...'` kế báo thêm 1 dòng "✅ Đã chạy lại bình thường (sau lỗi lúc HH:MM)" (`BotRunner.loi_luc`).
+- (28/10) OCR xu mất dấu chấm: Stylist Mỹ 1.1M đọc thành `11M` -> web hiện 11M. `_sua_xu`: M không chấm (xu không bao giờ ≥10M) -> chấm sau chữ số đầu; K ≥4 chữ số không chấm -> chấm trước số cuối.
+- (28/10) Mộng Hoa Lục tk test2/Xún (lần 2, 26/10 cũng vậy): bài đầu là bài chia sẻ dài -> nút like ở đáy (264,511) ngoài `vung_like` -> "chưa thấy nút like" x3, TNT 3/4. Lần tìm đầu giờ nới vùng xuống đáy (khớp like_chua 0.92); kiểm tra trang chi tiết giữ vùng cũ.
+- (01/11) Mộng Hoa Lục khadoan1608 (3/5 nhân vật): tab Theo Dõi trống "Chưa có nội dung Mộng Hoa Lục" (không theo dõi ai) -> chưa thấy nút like x3, TNT 3/4. Lần thử 2-3 bấm tab **Khám Phá** (108,75) — CHỈ khi thấy `tab_kham_pha.png` (bấm mù trên màn chính = mở bảng Nhiệm Vụ, Wfflec Dượcc). Chưa kiểm bố cục Khám Phá bằng ảnh.
 - (19/10) Banner "Nhất Niên Hồi Ức" (10–22/10) nút X trắng ở (754,105) không có mẫu -> kẹt đăng nhập 3 phút
   rồi lỗi. Đã thêm `templates/x_nhat_nien.png` (màn khác chỉ khớp ≤0.64). NHƯNG nút X trong suốt: nền game
   đổi (tím -> xanh tuyết) là mẫu X tụt 0.64, so hình dạng 0.43 -> trượt (23:22, kẹt 2 phút tới khi watchdog hỏi

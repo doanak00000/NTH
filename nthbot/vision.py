@@ -47,17 +47,24 @@ class Match:
 class TemplateStore:
     """Nạp & cache ảnh mẫu từ thư mục templates."""
 
-    def __init__(self, templates_dir: str):
+    def __init__(self, templates_dir: str, override_dir: str = ""):
         self.dir = templates_dir
+        self.override_dir = override_dir   # bản PC: templates_pc/ có ảnh cùng tên -> dùng ảnh đó thay ảnh chung
         self._cache: dict[str, np.ndarray] = {}
 
     def get(self, name: str) -> np.ndarray:
         if name in self._cache:
             return self._cache[name]
         path = name if os.path.isabs(name) else os.path.join(self.dir, name)
+        if self.override_dir and not os.path.isabs(name) and os.path.exists(os.path.join(self.override_dir, name)):
+            path = os.path.join(self.override_dir, name)
         if not os.path.exists(path):
             raise FileNotFoundError(f"Không thấy ảnh mẫu: {path}")
         img = imread_unicode(path)
+        data = np.fromfile(path, dtype=np.uint8)
+        bgra = cv2.imdecode(data, cv2.IMREAD_UNCHANGED) if data.size else None
+        if bgra is not None and bgra.ndim == 3 and bgra.shape[2] == 4 and (bgra[:, :, 3] < 255).any():
+            img = bgra   # PNG có vùng trong suốt = mặt nạ: chỉ so phần đục (vd chữ trên nền động, find_template)
         if img is None:
             raise ValueError(f"Đọc ảnh mẫu thất bại: {path}")
         self._cache[name] = img
@@ -83,6 +90,9 @@ def find_template(
         search = screen[ry:ry + rh, rx:rx + rw]
         offset_x, offset_y = rx, ry
 
+    mask = None
+    if template.ndim == 3 and template.shape[2] == 4:      # mẫu có kênh trong suốt -> bỏ qua phần nền
+        mask, template = template[:, :, 3], np.ascontiguousarray(template[:, :, :3])
     scales = [1.0]
     if multi_scale:
         scales = [0.8, 0.9, 1.0, 1.1, 1.25]
@@ -96,7 +106,12 @@ def find_template(
         th, tw = tmpl.shape[:2]
         if tmpl.shape[0] > search.shape[0] or tmpl.shape[1] > search.shape[1]:
             continue
-        res = cv2.matchTemplate(search, tmpl, cv2.TM_CCOEFF_NORMED)
+        if mask is None:
+            res = cv2.matchTemplate(search, tmpl, cv2.TM_CCOEFF_NORMED)
+        else:   # vùng phẳng cho NaN/inf khi có mặt nạ -> coi như không khớp
+            m = mask if scale == 1.0 else cv2.resize(mask, (tw, th), interpolation=cv2.INTER_NEAREST)
+            res = np.nan_to_num(cv2.matchTemplate(search, tmpl, cv2.TM_CCOEFF_NORMED, mask=m),
+                                nan=0.0, posinf=0.0, neginf=0.0)
         _, max_val, _, max_loc = cv2.minMaxLoc(res)
         if max_val > best.confidence:
             best = Match(

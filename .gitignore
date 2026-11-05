@@ -14,3 +14,4 @@ debug_scroll/
 .claude/scheduled_tasks.lock
 xu_private.json
 xu_private.json.tmp
+discord_webhook.txt

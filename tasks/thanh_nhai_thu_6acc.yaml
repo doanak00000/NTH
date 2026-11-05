@@ -27,7 +27,7 @@ repeat: 0           # 0 = chạy tới khi kho "Tài khoản Zing" hết acc ch�
 
 # Toạ độ TÂM 5 nút roll trong trang Thanh Nhai Thư.
 variables:
-  gian_cach_treo: 30  # giây chờ giữa 2 lần treo tơ (UI 'Giãn cách treo' ghi đè khi Start)
+  gian_cach_treo: 20  # giây chờ giữa 2 lần treo tơ (UI 'Giãn cách treo' ghi đè khi Start)
   r1_x: 395
   r1_y: 298
   r2_x: 513
@@ -45,7 +45,8 @@ steps:
 
   # Lấy acc CHƯA CHẠY trong kho "Tài khoản Zing" (UI) + đăng nhập. Đang chạy dở acc thì bỏ qua.
   # Kho hết acc -> task tự kết thúc.
-  - python: { func: nhan_acc, tu_duoi: true }   # nhân vật đầu cũng cuộn xuống chọn dòng cuối
+  - python: { func: nhan_acc, tu_duoi: true, pc: { giao_dien_dn_xy: [844, 147] } }   # nhân vật đầu cũng cuộn xuống chọn dòng cuối
+  # (02/11) Cài đặt bản PC đổi chỗ 2 nút: 'Chuyển đổi nhân vật' (439,147), 'Giao diện đăng nhập' (844,147)
 
   # ========================================================
   #  PHẦN A — VIỆC HẰNG NGÀY CHO NHÂN VẬT HIỆN TẠI
@@ -60,13 +61,16 @@ steps:
   # Nhiệm vụ nhỏ (chụp ảnh, hảo cảm): không thấy nút thì bỏ qua làm tiếp, không dừng cả task.
   - log: "Hoạt động: chụp ảnh"
   # máy ảnh -> chụp (game bỏ qua lần bấm chụp thì tự bấm lại) -> xong -> thoát
-  - python: { func: chup_anh }
+  - python: { func: chup_anh, pc: { icon_xy: [26, 513] } }
   - python: { func: ve_man_hinh_chinh }
 
   # ---------- 2) MỘNG HOA LỤC (bấm like 2 lần: 1 like + 1 unlike) ----------
   # xã giao (319,498) -> tab (30,122) -> nút like (dò ảnh, kiểm tra mỗi lần bấm nút đổi trạng thái) -> thu (632,240)
   - log: "Hoạt động: mộng hoa lục"
-  - python: { func: mong_hoa_luc }
+  - python:
+      func: mong_hoa_luc
+      pc: { xa_giao: [364, 506], tab: [22, 99], thu: [508, 246], vung_like: [150, 200, 200, 300],
+            kham_pha: [85, 59], vung_kham_pha: [40, 45, 140, 45] }   # (02/11) bảng Xã Giao bản PC nhỏ ~0.78
   - python: { func: ve_man_hinh_chinh }
 
   # ---------- 3) HẢO CẢM ----------
@@ -79,7 +83,7 @@ steps:
   # ---------- 4) DU NGOẠN: nhận hộp quà góc phải dưới ----------
   - log: "Hoạt động: du ngoạn"
   - python: { func: mo_hoat_dong }      # mở bảng Hoạt động (tự bấm lại nếu game bỏ qua)
-  - tap: { x: 595, y: 285, jitter: 1 }     # ô Du Ngoạn
+  - tap: { x: 595, y: 285, jitter: 1, pc: { x: 665, y: 285 } }     # ô Du Ngoạn (bản PC: bảng Hoạt động dạng lưới)
   - sleep: 3
   - tap: { x: 715, y: 445, jitter: 1 }     # hộp quà 'Nhận phần thưởng'
   - sleep: 2.5
@@ -128,6 +132,7 @@ steps:
   # ========================================================
   - python:
       func: doi_acc
+      pc: { doi_tk: [439, 147] }   # bản PC: 'Chuyển đổi nhân vật' ở cột trái (846,147 trên PC = đăng xuất tk Zing!)
       zing: true     # hết 6 nhân vật -> đánh ✓ tk Zing này, vòng sau nhan_acc lấy acc mới
       tu_duoi: true  # luôn chọn DÒNG CUỐI (nhân vật lâu chưa chơi nhất; vừa chơi thì nhảy lên đầu list)
       # Mặc định: mỗi action giãn >=10s, chờ list nhân vật & vào game 60s,
@@ -136,5 +141,5 @@ steps:
         - [139, 202]          # acc 2
         - [176, 290]          # acc 3
         - [164, 369]          # acc 4 (dòng 4 chỉ hiện 1 phần: y 358-381)
-        - { x: 109, y: 233, scroll: 1 }   # acc 5 (TrangQuangVũ): cuộn 1 lần rồi tap (109,233)
+        - { x: 109, y: 233, scroll: 1 }   # acc 5: cuộn 1 lần rồi tap (109,233)
         - { x: 119, y: 322, scroll: 1 }   # acc 6 (TháiSơnVũ):   cuộn 1 lần rồi tap (119,322)

@@ -32,15 +32,18 @@ def _chuan(ten: str) -> str:
 
 def cung(a, b):
     """Cùng 1 nhân vật dù OCR mỗi lần 1 kiểu: giống >= 0.85 ('Hoa Phi'/'Hoa Phii' 0.92, 'KRXI'/'KRIXI' 0.89) HOẶC
-    đoạn chung dài nhất >= 85% tên ngắn hơn (rác đầu/cuối: "TêXuânDao"/"Š TềXuânDa6" chung "texuanda" 8/9).
+    đoạn chung dài nhất >= 85% tên ngắn hơn (rác đầu/cuối: "LêMinhKhoa"/"Š LềMinhKho6" chung "leminhkho" 9/10).
     Chỉ so trong 1 tk. Khác người trong cùng tk gần nhất đo được: MissU/KissU 0.80.
-    (20/10: ngưỡng 0.9 làm KRIXI->'KRXI', NhưƠïnhY->'NhữDinhY' bị tưởng nhân vật mới -> làm lại lần 2.)"""
+    (20/10: ngưỡng 0.9 làm KRIXI->'KRXI', NhưƠïnhY->'NhữDinhY' bị tưởng nhân vật mới -> làm lại lần 2.)
+    (01/11 khadoan1608) 'Lâm My' nằm trọn trong 'Lâm Mỳ Mỳ' -> bị tưởng trùng, tk chỉ 5/6 -> luật đoạn chung chỉ áp
+    khi 2 tên dài gần bằng nhau (ngắn >= 80% dài)."""
     from difflib import SequenceMatcher
     if not a or not b:
         return False
     sm = SequenceMatcher(None, a, b)
     chung = sm.find_longest_match(0, len(a), 0, len(b)).size
-    return sm.ratio() >= 0.85 or chung >= 0.85 * min(len(a), len(b))
+    ngan, dai = sorted((len(a), len(b)))
+    return sm.ratio() >= 0.85 or (chung >= 0.85 * ngan and ngan >= 0.8 * dai)
 
 
 def _chon_ten(nvs: dict, ten: str) -> str:
@@ -131,13 +134,54 @@ def _da_ap_path() -> str:
     return resolve_config_path(os.path.join("logs", "lenh_web.json"))   # {tk: id lệnh đã áp} — máy này, không lên git
 
 
-def ap_lenh(log=print) -> int:
-    """lenh.json (web ghi lên repo): {"gio": {tk: {"gio": "HH:MM" | "", "id": "..."}}} -> đổi giờ chạy acc PUBLIC.
-    Mỗi id áp đúng 1 lần (bot tự dời giờ sau nhân vật 1 thì lệnh cũ không đè lại). Trả số lệnh đã áp."""
+# tool đang chạy gì -> trang_thai.json "_tool" (UI cập nhật qua dat_tool): {"chay": bool, "che_do": "thuong"|"treo"}
+TOOL = {"chay": False, "che_do": ""}
+
+
+def dat_tool(chay: bool, che_do: str):
+    from . import accounts
+    if TOOL != {"chay": chay, "che_do": che_do}:
+        TOOL.update(chay=chay, che_do=che_do)
+        ghi_trang_thai(accounts.load())
+
+
+def ap_lenh(log=print, bat_dau=None) -> int:
+    """lenh.json (web ghi lên repo), mỗi id áp đúng 1 lần (bot tự dời giờ sau nhân vật 1 thì lệnh cũ không đè lại):
+      "gio":   {tk: {"gio": "HH:MM" | "", "id": "..."}}  -> đổi giờ chạy acc PUBLIC
+      "treo":  {tk: {"bat": true|false, "id": "..."}}    -> tick / bỏ tick "Treo lại" acc PUBLIC
+      "da":    {tk: {"da": "trang"|"vang", "id": "..."}} -> loại đá chế tơ của acc PUBLIC
+      "start": {"che_do": "thuong"|"treo", "id": "..."}   -> bat_dau(che_do): UI Start (đang chạy thì dừng rồi Start)
+    Trả số lệnh đã áp."""
     from . import accounts
     cu = _doc(_da_ap_path())
-    da_ap, moi = dict(cu), []
-    for user, l in (_doc(os.path.join(web_dir(), "lenh.json")).get("gio") or {}).items():
+    da_ap, moi, treo = dict(cu), [], []
+    lenh = _doc(os.path.join(web_dir(), "lenh.json"))
+    for user, l in (lenh.get("treo") or {}).items():
+        lid, k = str(l.get("id", "")), "treo:" + user
+        if not lid or da_ap.get(k) == lid:
+            continue
+        a = accounts.get(user)
+        if a is None or a["private"]:
+            log(f"web: bỏ lệnh treo lại không hợp lệ ({user})")
+        else:
+            treo.append((user, bool(l.get("bat"))))
+        da_ap[k] = lid
+    da = []
+    for user, l in (lenh.get("da") or {}).items():
+        lid, k = str(l.get("id", "")), "da:" + user
+        if not lid or da_ap.get(k) == lid:
+            continue
+        a = accounts.get(user)
+        if a is None or a["private"] or l.get("da") not in ("trang", "vang"):
+            log(f"web: bỏ lệnh loại đá không hợp lệ ({user})")
+        else:
+            da.append((user, l["da"]))
+        da_ap[k] = lid
+    st = lenh.get("start") or {}
+    start = str(st.get("id", "")) and da_ap.get("_start") != str(st.get("id")) and st.get("che_do")
+    if start:
+        da_ap["_start"] = str(st["id"])
+    for user, l in (lenh.get("gio") or {}).items():
         lid, gio = str(l.get("id", "")), str(l.get("gio", ""))
         if not lid or da_ap.get(user) == lid:
             continue
@@ -153,10 +197,23 @@ def ap_lenh(log=print) -> int:
     for user, gio in moi:
         accounts.dat_gio(user, gio, ep=True)
         log(f"web: đổi giờ chạy {user} -> {gio or 'chạy ngay'}")
-    return len(moi)
+    for user, bat in treo:
+        if not accounts.get(user)["treo"].startswith(accounts.RUNNING):   # đang treo lại thì để yên
+            accounts.set_treo(user, "cho" if bat else "")
+        log(f"web: {'tick' if bat else 'bỏ tick'} treo lại tơ {user}")
+    for user, d in da:
+        accounts.set_da(user, d)
+        log(f"web: {user} chế tơ bằng đá {'vàng' if d == 'vang' else 'trắng tím'}")
+    if start in ("thuong", "treo"):
+        log(f"web: Start {'treo lại tơ' if start == 'treo' else 'chạy thường'}")
+        if bat_dau:
+            bat_dau(start)
+    if da_ap != cu and not (moi or treo or da):   # chỉ có lệnh start / lệnh bỏ: vẫn đẩy id đã nhận lên web
+        ghi_trang_thai(accounts.load(), log)
+    return len(moi) + len(treo) + len(da) + bool(start)
 
 
-def nghe_lenh(log=print, chu_ky: float = 20):
+def nghe_lenh(log=print, chu_ky: float = 20, bat_dau=None):
     """Thread nền (mở UI là chạy): repo có commit mới (git ls-remote, vài chục byte) mới pull rồi áp lệnh web.
     Vòng đầu chạy ngay -> lệnh web gửi lúc tool đang tắt được áp khi mở tool."""
     def chay():
@@ -166,7 +223,7 @@ def nghe_lenh(log=print, chu_ky: float = 20):
                 if xa and xa[0] != _git("rev-parse", "HEAD").stdout.strip():
                     with _push_lock:
                         _git("pull", "--rebase", "--autostash", "-q")
-                ap_lenh(log)
+                ap_lenh(log, bat_dau)
             except Exception as e:  # noqa: BLE001 - mất mạng: vòng sau thử lại
                 log(f"web: đọc lệnh lỗi: {e}")
             time.sleep(chu_ky)
@@ -188,7 +245,7 @@ def ghi_trang_thai(accs: list[dict], log=print):
             cu = {}
         moc = datetime.fromtimestamp(moc_reset()).strftime("%Y-%m-%d %H:%M")
         da_ap = _doc(_da_ap_path())
-        moi = {}
+        moi = {"_tool": {**TOOL, "lenh_start": da_ap.get("_start", "")}}   # web: tool chạy gì + id lệnh Start đã nhận
         for a in accs:
             if a.get("private", False):
                 continue
@@ -204,9 +261,14 @@ def ghi_trang_thai(accs: list[dict], log=print):
             moi[a["user"]] = {"st": st, "nv": a["nv_xong"], "may": s[len(RUNNING):] if st == "chay" else "",
                               "bat_dau": bat_dau, "ket_thuc": ket_thuc,
                               "gio": a["gio"], "lenh": da_ap.get(a["user"], ""),   # giờ hẹn + id lệnh web đã nhận
+                              "treo": a.get("treo", ""), "lenh_treo": da_ap.get("treo:" + a["user"], ""),
+                              "da": a.get("da", "trang"), "lenh_da": da_ap.get("da:" + a["user"], ""),
                               # nhân vật làm hôm nay + bước lỗi (phiếu kết quả) -> web hiện ✓ / ⚠ từng nhân vật
                               "nhan_vat": [{"ten": t, "luc": datetime.fromtimestamp(p["luc"]).strftime("%H:%M"),
                                             "loi": loi, "treo": p.get("treo"),   # số ô treo được (không tính lần kệ đầy)
+                                            "treo_lai": p.get("treo lại"),       # số ô lần treo lại tơ gần nhất
+                                            "treo_lai_luc": datetime.fromtimestamp(p["treo_lai_luc"]).strftime("%H:%M")
+                                            if p.get("treo_lai_luc") else "",
                                             "het_to": bool(p.get("hết tơ")),     # treo thiếu vì túi hết tơ
                                             "ke_day": bool(p.get("kệ đầy"))}     # treo thiếu vì kệ còn hàng chưa hết hạn
                                            for t, p, loi in phieu_hom_nay(a)]}

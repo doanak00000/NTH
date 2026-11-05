@@ -14,6 +14,24 @@ adb_path: "C:/LDPlayer/LDPlayer14/adb.exe"
 #  Để trống nếu bạn muốn tự khai báo cổng ở mục devices bên dưới.
 ldconsole_path: "C:/LDPlayer/LDPlayer14/ldconsole.exe"
 
+# BlueStacks 5: tool tự dò instance trong bluestacks.conf, bật/tắt bằng HD-Player.exe.
+#  Phải bật ADB trong BlueStacks: Settings > Advanced > Android Debug Bridge.
+#  BlueStacks dùng cổng 5555 trùng LDPlayer #0 -> đừng bật cả hai cùng lúc.
+bluestacks_player: "C:/Program Files/BlueStacks_nxt/HD-Player.exe"
+bluestacks_conf: "C:/ProgramData/BlueStacks_nxt/bluestacks.conf"
+
+# Mở tool / Start từ web / --start: chỉ tick sẵn loại này ("PC", "BlueStacks" hoặc "LDPlayer").
+may_ao_mac_dinh: "LDPlayer"
+
+# LDPlayer không dùng (index trong ldconsole): không hiện trên tool, không bao giờ chạy.
+#  03/11: LD [0] boot không lên cả ngày -> chỉ dùng LD-1.
+ld_bo_qua: [0]
+
+# Bản PC: tool tìm cửa sổ game theo tiêu đề, chụp + bấm ngầm (không chiếm chuột). "" = tắt bản PC.
+#  Ảnh mẫu riêng PC để trong templates_pc/ (cùng tên ảnh chung -> dùng ảnh PC). Mở game qua Level Up trước khi Start.
+pc_tieu_de: ""   # bật lại bản PC: "Nghịch Thủy Hàn"
+templates_pc_dir: "templates_pc"
+
 # Package name của game (Nghịch Thủy Hàn).
 #  ⚠️ Bản GLOBAL khác bản CHINA -> phải tự dò trên máy bạn, đừng đoán.
 #  Cách lấy (mở game tới màn hình chính rồi chạy):
