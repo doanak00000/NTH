@@ -40,9 +40,12 @@ def test_gia_da_hop_le():
     assert custom._gia_da_hop_le("82") and custom._gia_da_hop_le("99")
     # chốt giá: mọi lần đọc phải khớp, lệch / vô lý / quá ít -> None (không mua, sang đá trắng tím)
     assert custom._chot_gia(["82", "82", "", "82"]) == 82
-    assert custom._chot_gia(["84", "4", "84", "84"]) is None
-    assert custom._chot_gia(["63", "83", "83", "83"]) is None
+    # lần đọc dưới giá sàn 82 = chắc chắn sai -> bỏ, không làm hỏng cả lần đọc (06/11: giá 82, 1 cách đọc ra '44')
+    assert custom._chot_gia(["82", "82", "44", "82", "82", "82", "44", "82"]) == 82
+    assert custom._chot_gia(["84", "4", "84", "84"]) == 84       # 84 > 83 -> _mua_da vẫn không mua
+    assert custom._chot_gia(["82", "88", "82", "82"]) is None    # 2 số hợp lệ lệch nhau -> không chắc
     assert custom._chot_gia(["82", "", "", ""]) is None
+    assert custom._chot_gia(["82", "44", "44", "44"]) is None    # chỉ 1 lần hợp lệ
     assert custom._chot_gia(["27", "27"]) is None
 
 

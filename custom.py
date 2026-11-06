@@ -1674,11 +1674,11 @@ def _gia_da_hop_le(text):
 
 
 def _chot_gia(texts):
-    """Chốt giá từ nhiều lần OCR: cần >= 2 lần đọc hợp lệ và TẤT CẢ lần đọc hợp lệ cùng 1 số,
-    lệch nhau / có lần đọc vô lý -> None (không chắc thì không mua)."""
+    """Chốt giá từ nhiều lần OCR: bỏ lần đọc dưới giá sàn (chắc chắn sai, 06/11 1 cách đọc ra '44' khi giá 82), cần
+    >= 2 lần đọc hợp lệ và TẤT CẢ lần hợp lệ cùng 1 số; lệch nhau -> None (không chắc thì không mua)."""
     import re
-    so = [int(re.search(r"\d+", t).group()) for t in texts if any(c.isdigit() for c in t)]
-    if len(so) < 2 or len(set(so)) != 1 or not _gia_da_hop_le(str(so[0])):
+    so = [int(re.search(r"\d+", t).group()) for t in texts if _gia_da_hop_le(t)]
+    if len(so) < 2 or len(set(so)) != 1:
         return None
     return so[0]
 
