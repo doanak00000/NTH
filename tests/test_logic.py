@@ -141,25 +141,40 @@ def test_che_to_da_trang_tim():
     def fake_tap(ctx, img, *a, **k):
         ctx.hl -= 5 * 60                     # Chế Tạo ăn hết hoạt lực
     goc = (custom._mo_trang_che, custom._doc_so_ocr, custom._mua_da, custom._find_tap)
-    custom._mo_trang_che = lambda *a: None
+    mo = []                                  # công thức đã mở: da_vang True / False
+    custom._mo_trang_che = lambda ctx, hd, tk, da_vang: mo.append(da_vang)
     custom._doc_so_ocr = lambda ctx, reg, *a, **k: f"{ctx.hl}/1500" if reg[0] == 843 else "0/1"
     custom._mua_da, custom._find_tap = fake_mua, fake_tap
     try:
         c = Ctx()
         custom.che_to(c)
-        # (05/11) acc mặc định (da = trang): vào thẳng dòng 1, chỉ mua đá trắng tím
-        assert mua == [82] and c.taps[0] == (245, 86) and c.variables["_phieu"]["chế tơ"] == 60
-        # acc chọn đá vàng: ở dòng 3, chỉ mua đá vàng; đá vàng đắt + không có sẵn -> KHÔNG đổi sang đá trắng tím
+        # (05/11) acc mặc định (da = trang): công thức đá trắng tím, chỉ mua đá trắng tím
+        assert mo == [False] and mua == [82] and c.variables["_phieu"]["chế tơ"] == 60
+        # acc chọn đá vàng: công thức đá vàng, chỉ mua đá vàng; đá vàng đắt + không có sẵn -> KHÔNG đổi sang đá trắng tím
         goc_get = accounts.get
         accounts.get = lambda u: {"da": "vang"}
         try:
-            mua.clear(); c.taps.clear(); c.hl = 300; c.variables["_phieu"] = {}
+            mo.clear(); mua.clear(); c.hl = 300; c.variables["_phieu"] = {}
             custom.che_to(c)
-            assert mua == [83] and (245, 86) not in c.taps and c.variables["_phieu"]["chế tơ"] == 0
+            assert mo == [True] and mua == [83] and c.variables["_phieu"]["chế tơ"] == 0
         finally:
             accounts.get = goc_get
     finally:
         custom._mo_trang_che, custom._doc_so_ocr, custom._mua_da, custom._find_tap = goc
+
+
+def test_chon_cong_thuc_theo_anh():
+    # (06/11) ảnh thật trang Thiết Kế sau bản cập nhật: icon tơ chỉ khớp dòng Tơ Phiêu Vân, ô đá phân biệt trắng / vàng
+    import cv2
+    from nthbot.vision import TemplateStore, find_template, imread_unicode
+    t = TemplateStore(os.path.join(GOC, "templates"))
+    to, dt, dv = t.get("to_cong_thuc.png"), t.get("da_trang.png"), t.get("da_vang.png")
+    for ten, lap in (("da_trang", (True, False)), ("da_vang", (False, True))):
+        scr = imread_unicode(os.path.join(GOC, "tests", "anh", f"che_to_{ten}.png"))
+        assert (find_template(scr, dt, 0.85, region=custom._REG_O_DA).found,
+                find_template(scr, dv, 0.85, region=custom._REG_O_DA).found) == lap, ten
+        x0, y0, w, h = custom._REG_DS_CONG_THUC
+        assert cv2.matchTemplate(scr[y0:y0 + h, x0:x0 + w], to, cv2.TM_CCOEFF_NORMED).max() >= 0.85
 
 
 def test_lenh_web_loai_da():
@@ -509,6 +524,8 @@ def test_discord_khong_bao_private():
         assert r._dang_lam_private("⟦CHỜ CLAUDE⟧ x")
         r.ctx.variables = {"_zing_user": "congkhai"}
         assert not r._dang_lam_private("⟦CHỜ CLAUDE⟧ x")
+        r.ctx.variables = {"_dang_nhap": "bimat"}        # (06/11) lỗi lúc đang đăng nhập acc private
+        assert r._dang_lam_private("Cứu lỗi: nhờ Claude xem màn hình (lần 1/8)...")
     r.ctx = None
     assert not r._dang_lam_private("Báo cáo: x")
 

@@ -1465,6 +1465,8 @@ def doi_tk_zing(ctx, acc, hoat_dong_xy=(918, 21), cai_dat="cai_dat.png",
 
     reg_server = (300, 380, 360, 90)     # nút Xông Pha Giang Hồ ở GIỮA (màn server)
     reg_nhan_vat = (600, 430, 360, 110)  # nút Xông Pha Giang Hồ ở PHẢI DƯỚI (màn nhân vật)
+    # ghi ngay từ đầu: lỗi lúc đang đăng nhập acc private cũng không được báo Discord (bot._dang_lam_private đọc)
+    ctx.variables["_dang_nhap"] = acc["user"]
     ctx.log(f"doi_tk_zing: đăng xuất -> đăng nhập {accounts.ten_hien(acc['user'])}")
     ctx.variables.pop("_can_dn_lai", None)   # đã đăng nhập lại -> nhan_acc vòng sau khỏi làm lại
     ctx.variables["_ten_nv"] = ""        # tên nhân vật của tk trước (game vào thẳng màn chính thì không đọc lại)
@@ -1582,7 +1584,6 @@ def doi_tk_zing(ctx, acc, hoat_dong_xy=(918, 21), cai_dat="cai_dat.png",
                         "(sai mật khẩu / captcha / banner lạ?)")
     ctx.sleep(4)   # list còn chạy hiệu ứng ~3.5s: bấm sớm hơn thì game tự quay về chọn dòng 1 (đo 18/10)
     # tu_duoi: nhân vật đầu tiên cũng cuộn xuống chọn dòng cuối chưa làm hôm nay (như doi_acc); không thì dòng 1
-    ctx.variables["_dang_nhap"] = acc["user"]
     if tu_duoi:
         # (05/11 mylu1108) tk dở 5/6: nhân vật dở vừa chơi nhảy lên dòng 1, dòng cuối là nhân vật làm sớm nhất hôm nay.
         #  OCR đọc 'Y Tán' thành 'NẬT' -> tưởng chưa làm, làm lại Y Tán, bỏ sót Sư Tán. Đã chạm cả 6 -> dò từ dòng 1.
@@ -1738,8 +1739,44 @@ def _mua_da(ctx, so_luong, gia_toi_da=83, sau=3.0):
     return True
 
 
-def _mo_trang_che(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc_xy=(245, 212)):
-    """Màn chính -> Hoạt động -> Nghề nghiệp -> Thiết Kế -> Tơ Phiêu Vân-2 (dòng 3, dùng đá vàng)."""
+_REG_DS_CONG_THUC = (130, 50, 230, 340)   # list công thức bên trái trang Thiết Kế
+_REG_O_DA = (480, 280, 90, 90)            # ô nguyên liệu (đá) giữa trang chế
+
+
+def _chon_cong_thuc(ctx, da_vang, lan_cuon=5, nguong=0.85):
+    """(06/11 game cập nhật) list Thiết Kế có nhiều dòng 'Tơ Phiêu Vân-2' (dùng hoa / đá trắng tím / đá vàng), dòng
+    dùng đá nằm dưới, phải cuộn mới thấy, cuộn mỗi lần lệch vài px -> không bấm theo toạ độ: tìm icon tơ trong list
+    (to_cong_thuc.png), bấm từng dòng tơ tới khi ô nguyên liệu là đúng loại đá (da_vang.png / da_trang.png)."""
+    import cv2
+    import numpy as np
+    from nthbot.engine import StepError
+    mau_da = "da_vang.png" if da_vang else "da_trang.png"
+    to = ctx.templates.get("to_cong_thuc.png")
+    x0, y0, w, h = _REG_DS_CONG_THUC
+    n = int(lan_cuon) + 1
+    for i in range(2 * n):
+        if i == n:                           # dò xuống hết mà chưa thấy (list không mở ở đầu?) -> về đầu list, dò lại
+            for _ in range(n):
+                keo_that(ctx, 245, 100, 245, 340)
+            ctx.sleep(1.5)
+        elif i:
+            keo_that(ctx, 245, 340, 245, 100)
+            ctx.sleep(1.5)
+        scr = ctx.capture()
+        r = cv2.matchTemplate(scr[y0:y0 + h, x0:x0 + w], to, cv2.TM_CCOEFF_NORMED)
+        ys = sorted({y0 + int(y) + to.shape[0] // 2 for y, _ in zip(*np.where(r >= nguong))})
+        dong = [y for k, y in enumerate(ys) if not k or y - ys[k - 1] > 20]   # gộp các điểm khớp sát nhau = 1 dòng
+        for y in dong:
+            ctx.device.tap(245, y)
+            ctx.sleep(1.5)
+            if ctx.find(mau_da, region=_REG_O_DA).found:
+                ctx.log(f"che_to: chọn công thức Tơ Phiêu Vân dùng đá {'vàng' if da_vang else 'trắng tím'} (y={y})")
+                return True
+    raise StepError(f"che_to: không tìm thấy công thức Tơ Phiêu Vân dùng đá {'vàng' if da_vang else 'trắng tím'}")
+
+
+def _mo_trang_che(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), da_vang=False):
+    """Màn chính -> Hoạt động -> Nghề nghiệp -> Thiết Kế -> công thức Tơ Phiêu Vân-2 dùng đá vàng / đá trắng tím."""
     from nthbot.engine import StepError
     # bước lỗi được làm lại khi đang ở trang Nghề Nghiệp: (920,31) ở đó là số hoạt lực -> bật tooltip, không mở
     #  được bảng Hoạt động (20/10 bỏ cả tk doangia1608) -> về màn chính trước
@@ -1753,9 +1790,7 @@ def _mo_trang_che(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc
     ctx.sleep(1)
     ctx.device.tap(*thiet_ke_xy)
     ctx.sleep(3)
-    ctx.device.tap(*cong_thuc_xy)
-    if not _cho_qua_popup(ctx, "da_vang.png", timeout=8, region=(480, 280, 90, 90), dong_x=False).found:
-        raise StepError("che_to: dòng 3 không phải Tơ Phiêu Vân dùng đá vàng (kiểm tra cong_thuc_xy)")
+    _chon_cong_thuc(ctx, da_vang)
 
 
 def quet_xu(ctx, sau=3.0):
@@ -1774,44 +1809,38 @@ def quet_xu(ctx, sau=3.0):
     return True
 
 
-def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488), cong_thuc_xy=(245, 212),
+def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488),
            hoat_luc_reg=(843, 18, 80, 22), so_da_reg=(500, 348, 50, 18), hl_moi_lan=5,
-           max_vong=3, toi_da=None, gia_da_toi_da=83, sau=3.0,
-           cong_thuc_tt_xy=(245, 86), gia_da_tt_toi_da=82):
-    """CHẾ TƠ PHIÊU VÂN: Hoạt động -> Nghề nghiệp -> Thiết Kế -> Tơ Phiêu Vân-2 (dòng 3)
-    -> mua đá vàng VỪA ĐỦ theo hoạt lực hiện tại (OCR) -> chế tối đa (^) -> Chế Tạo.
+           max_vong=3, toi_da=None, gia_da_toi_da=83, sau=3.0, gia_da_tt_toi_da=82):
+    """CHẾ TƠ PHIÊU VÂN: Hoạt động -> Nghề nghiệp -> Thiết Kế -> công thức Tơ Phiêu Vân-2 theo loại đá của acc
+    -> mua đá VỪA ĐỦ theo hoạt lực hiện tại (OCR) -> chế tối đa (^) -> Chế Tạo.
 
     Lặp tối đa `max_vong` lần (đọc lại hoạt lực): OCR đọc sai số đá / lô hết hàng thì vòng sau
     tự mua bù. Kết thúc vẫn ĐỨNG Ở TRANG CHẾ (treo_to đi tiếp từ đây).
     toi_da: giới hạn tổng số lần chế (None = theo hoạt lực).
     gia_da_toi_da: chỉ mua đá khi giá lô rẻ nhất <= mức này (mặc định 83); đắt hơn thì chỉ chế
                    bằng đá đang có.
-    (05/11) Loại đá theo acc (accounts `da`): "trang" (mặc định) = dòng 1 (`cong_thuc_tt_xy`), mua đá trắng tím
-    <= gia_da_tt_toi_da; "vang" = dòng 3, mua đá vàng <= gia_da_toi_da. Không tự đổi luồng.
+    (05/11) Loại đá theo acc (accounts `da`): "trang" (mặc định) = công thức đá trắng tím, mua <= gia_da_tt_toi_da;
+    "vang" = công thức đá vàng, mua <= gia_da_toi_da. Không tự đổi luồng. (06/11) công thức tìm theo ảnh (_chon_cong_thuc).
 
     Trong task .yaml:  - python: { func: che_to }
     """
     from nthbot.engine import StepError
-    _mo_trang_che(ctx, hoat_dong_xy, thiet_ke_xy, cong_thuc_xy)   # treo_to đi tiếp từ trang chế -> luôn mở
-    if ctx.variables.get("_phieu", {}).get("nghề nghiệp") == "failed":
-        ctx.log("che_to: lần trước bấm Chế Tạo không ăn (túi đầy?) -> bỏ qua, không mua đá")
-        return True
-
-    # (05/11 user) 2 luồng ĐỘC LẬP theo lựa chọn của acc (UI cột "Đá vàng" / web): "trang" (mặc định) = dòng 1 +
-    #  mua đá trắng tím; "vang" = dòng 3 + mua đá vàng. Đá đắt / không chắc giá -> chỉ chế bằng đá đang có, KHÔNG đổi luồng.
+    # (05/11 user) 2 luồng ĐỘC LẬP theo lựa chọn của acc (UI cột "Đá vàng" / web): "trang" (mặc định) = đá trắng tím;
+    #  "vang" = đá vàng. Đá đắt / không chắc giá -> chỉ chế bằng đá đang có, KHÔNG đổi luồng.
     from nthbot import accounts
     acc = accounts.get(ctx.variables.get("_zing_user") or "") or {}
     da_vang = acc.get("da") == "vang"
     # luồng cũ (03/11): đá vàng đắt -> tự chuyển đá trắng tím, nhớ theo nhân vật
     # nv = f"{ctx.variables.get('_zing_user')}|{ctx.variables.get('_acc_idx', 0)}"
     # da_vang = ctx.variables.get("_het_da_vang") != nv
-    da_che, hl_truoc, vong, o_dong_tt = 0, None, 0, False
+    _mo_trang_che(ctx, hoat_dong_xy, thiet_ke_xy, da_vang)   # treo_to đi tiếp từ trang chế -> luôn mở
+    if ctx.variables.get("_phieu", {}).get("nghề nghiệp") == "failed":
+        ctx.log("che_to: lần trước bấm Chế Tạo không ăn (túi đầy?) -> bỏ qua, không mua đá")
+        return True
+
+    da_che, hl_truoc, vong = 0, None, 0
     while vong < int(max_vong):
-        if not da_vang and not o_dong_tt:     # _mo_trang_che luôn chọn dòng 3 -> bấm lên dòng 1
-            ctx.device.tap(*cong_thuc_tt_xy)   # dòng 1: Tơ Phiêu Vân-2 dùng đá trắng tím (ô đá cùng chỗ đá vàng)
-            ctx.sleep(2.5)
-            o_dong_tt = True
-            ctx.log("che_to: chuyển sang dòng 1 (đá trắng tím)")
         hl = None
         for _ in range(4):                   # OCR đôi lúc trượt 1 lần dù số rõ (20/10 '311/1500') -> đọc lại
             # (24/10 tk test2) x3 đọc '723/1500' thành '7723/1500' (cả 8 lần), x5 đọc đúng -> thử tiếp tới khi hợp lệ

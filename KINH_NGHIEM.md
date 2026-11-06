@@ -181,7 +181,11 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - Nghề nghiệp → icon **Thiết Kế** (663,488) (KHÔNG phải (293,488) chế tác). Chờ thấy `thiet_ke_icon.png` vì trang load chậm.
   (23/10) Icon lúc có lúc không **chấm đỏ thông báo** góc phải trên → mẫu cũ có chấm chỉ khớp 0.64 khi không có
   (kẹt 20s, Claude cứu). Mẫu giờ cắt lõi 24x24 bỏ góc chấm: không chấm 1.0, có chấm 0.96, icon khác ≤0.55.
-- Công thức: **Tơ Phiêu Vân-2 dòng thứ 3** (245,212) — toạ độ, vì dòng 1 thường được chọn sẵn.
+- Công thức: ~~Tơ Phiêu Vân-2 dòng thứ 3 (245,212)~~ — (06/11 game cập nhật) list có nhiều dòng "Tơ Phiêu Vân-2"
+  (cấp 15/16/1 dùng HOA, cấp 11 thứ 2 = **đá trắng tím**, cấp 13 thứ 2 = **đá vàng**), 2 dòng đá nằm dưới, phải cuộn;
+  cuộn mỗi lần lệch ~9px nên KHÔNG bấm toạ độ: `_chon_cong_thuc` tìm icon tơ (`to_cong_thuc.png`) trong list, bấm
+  từng dòng tơ tới khi ô đá khớp `da_trang.png` / `da_vang.png` (đá trắng ↔ mẫu vàng chỉ 0.64). Hết list chưa thấy
+  -> cuộn về đầu dò lại. Đo thật: màn chính -> công thức đá trắng 35s. Ảnh test: tests/anh/che_to_da_*.png.
 - Đá vàng (Diệu Tinh Thạch) ở (525,322). Tap đầu đôi khi bị bỏ qua → thử lại 3 lần.
 - 1 lần chế = 5 hoạt lực. Số lần = hoạt lực // 5; **chỉ mua phần thiếu** = số lần − số đá đang có; `^` (617,422) = tối đa → Chế Tạo.
 - **Chỉ mua khi giá lô rẻ nhất ≤ 83** (OCR (277,120,40,22)). Đắt hơn → chỉ chế bằng đá đang có.
@@ -329,7 +333,9 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
 - (19/10, thay 20/10) Cả NHÂN VẬT ĐẦU (vừa đăng nhập) cũng chọn dòng cuối (`nhan_acc tu_duoi: true` -> `doi_tk_zing`
   -> `_chon_tu_duoi`). Tk đã làm hết hôm nay (vd Reset rồi chạy lại) -> `doi_tk_zing` trả "het" -> `nhan_acc` ✓ tk,
   lấy tk khác (trước đây vào dòng 1 làm lại nhân vật đã xong). Cách chọn hiện tại: mục 4 "Danh sách nhân vật".
-- (03/11) **Đá trắng tím (Long Đảm Thạch)**: đá vàng không có lô <= 83 -> `che_to` bấm TỌA ĐỘ (245,86) lên dòng 1
+- (05-06/11 thay mục dưới) Loại đá chọn THEO ACC (cột "Đá vàng" UI / web, mặc định đá trắng tím), 2 luồng độc lập,
+  không tự đổi; chọn công thức bằng ảnh (xem mục Công thức ở trên).
+- (03/11, CŨ) **Đá trắng tím (Long Đảm Thạch)**: đá vàng không có lô <= 83 -> `che_to` bấm TỌA ĐỘ (245,86) lên dòng 1
   (Tơ Phiêu Vân-2 cấp 11, 5 hoạt lực/lần, thêm tơ 20% thay vì 40%; ảnh dòng giống hệt các dòng khác nên không dò ảnh),
   ô đá vẫn ở (525,322), Cách nhận -> Khu Giao Dịch -> chợ y hệt đá vàng (giá ô đầu đọc OCR được), mua <= 82.
   Nhớ theo nhân vật: chế tơ lần 2 vào thẳng dòng 1. Sang nhân vật khác thử lại đá vàng trước.

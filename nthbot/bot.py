@@ -153,7 +153,7 @@ class BotRunner:
         if "tk test" in msg:
             return True
         v = self.ctx.variables if self.ctx else {}
-        user = v.get("_zing_user") or v.get("_dn_lai")
+        user = v.get("_zing_user") or v.get("_dn_lai") or v.get("_dang_nhap")   # _dang_nhap: đang đăng nhập dở
         if not user:
             return False
         try:
