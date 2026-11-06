@@ -140,7 +140,7 @@ def test_che_to_da_trang_tim():
     mua = []
     def fake_mua(ctx, n, gia):
         mua.append(gia)
-        return gia == 82
+        return gia is None                   # đá trắng (không đọc giá) mua được; đá vàng 83 coi như đắt
     def fake_tap(ctx, img, *a, **k):
         ctx.hl -= 5 * 60                     # Chế Tạo ăn hết hoạt lực
     goc = (custom._mo_trang_che, custom._doc_so_ocr, custom._mua_da, custom._find_tap)
@@ -151,8 +151,8 @@ def test_che_to_da_trang_tim():
     try:
         c = Ctx()
         custom.che_to(c)
-        # (05/11) acc mặc định (da = trang): công thức đá trắng tím, chỉ mua đá trắng tím
-        assert mo == [False] and mua == [82] and c.variables["_phieu"]["chế tơ"] == 60
+        # (05/11) acc mặc định (da = trang): công thức đá trắng tím, mua đá trắng KHÔNG đọc giá (06/11 user)
+        assert mo == [False] and mua == [None] and c.variables["_phieu"]["chế tơ"] == 60
         # acc chọn đá vàng: công thức đá vàng, chỉ mua đá vàng; đá vàng đắt + không có sẵn -> KHÔNG đổi sang đá trắng tím
         goc_get = accounts.get
         accounts.get = lambda u: {"da": "vang"}
@@ -216,6 +216,10 @@ def test_mua_da_luon_check_gia():
             bam_mua.clear()
             assert custom._mua_da(Ctx(), 10, 83) is ket_qua, doc
             assert (bam_mua == ["nut_mua.png"]) is ket_qua, doc
+        # (06/11 user) đá trắng tím: gia_toi_da=None -> không đọc giá lần nào, bấm Mua luôn
+        custom._doc_gia_da = lambda ctx: (_ for _ in ()).throw(AssertionError("không được đọc giá đá trắng"))
+        bam_mua.clear()
+        assert custom._mua_da(Ctx(), 10, None) is True and bam_mua == ["nut_mua.png"]
     finally:
         custom._mo_khu_giao_dich, custom._cho_qua_popup, custom._doc_gia_da, custom._find_tap = goc
 

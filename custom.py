@@ -1698,20 +1698,23 @@ def _doc_gia_da(ctx, region=(277, 120, 40, 22)):
 
 
 def _mua_da(ctx, so_luong, gia_toi_da=83, sau=3.0):
-    """Mua `so_luong` Diệu Tinh Thạch ở lô rẻ nhất (game chọn sẵn), rồi quay về trang chế.
-    Lô rẻ nhất giá > `gia_toi_da` (hoặc OCR không đọc được giá) -> KHÔNG mua. Trả True nếu đã mua."""
-    import re
+    """Mua `so_luong` đá ở lô rẻ nhất (ô trên cùng bên trái, game chọn sẵn), rồi quay về trang chế.
+    Lô rẻ nhất giá > `gia_toi_da` (hoặc OCR không chắc giá) -> KHÔNG mua. Trả True nếu đã mua.
+    gia_toi_da=None (đá trắng tím, 06/11 user): KHÔNG đọc giá, mua luôn lô rẻ nhất."""
     from nthbot.engine import StepError
     _mo_khu_giao_dich(ctx)
     if not _cho_qua_popup(ctx, "nut_mua.png", timeout=15).found:
         raise StepError("không vào được màn mua đá")
-    gia, texts = _doc_gia_da(ctx)            # giá lô rẻ nhất (ô đầu tiên), không chắc -> None
-    if gia is None or gia > int(gia_toi_da):
-        ctx.log(f"mua đá: giá lô rẻ nhất {gia} > {gia_toi_da} hoặc không chắc (OCR {texts}) -> KHÔNG mua")
-        ctx.device.tap(45, 30)               # quay lại trang chế
-        ctx.sleep(sau)
-        return False
-    ctx.log(f"mua đá: giá {gia} <= {gia_toi_da} -> mua {so_luong}")
+    if gia_toi_da is None:
+        ctx.log(f"mua đá: mua {so_luong} ở lô rẻ nhất (không đọc giá)")
+    else:
+        gia, texts = _doc_gia_da(ctx)        # giá lô rẻ nhất (ô đầu tiên), không chắc -> None
+        if gia is None or gia > int(gia_toi_da):
+            ctx.log(f"mua đá: giá lô rẻ nhất {gia} > {gia_toi_da} hoặc không chắc (OCR {texts}) -> KHÔNG mua")
+            ctx.device.tap(45, 30)           # quay lại trang chế
+            ctx.sleep(sau)
+            return False
+        ctx.log(f"mua đá: giá {gia} <= {gia_toi_da} -> mua {so_luong}")
     ctx.device.tap(770, 368)                 # ô số lượng -> hiện bàn phím số của game
     ctx.sleep(1.5)
     for _ in range(6):
@@ -1722,12 +1725,13 @@ def _mua_da(ctx, so_luong, gia_toi_da=83, sau=3.0):
         ctx.sleep(0.3)
     ctx.device.tap(*_NUMPAD_OK)
     ctx.sleep(1.5)
-    gia2, texts = _doc_gia_da(ctx)           # chợ tự làm mới 5s/lần -> lô có thể đổi giá lúc nhập số lượng
-    if gia2 is None or gia2 > int(gia_toi_da):
-        ctx.log(f"mua đá: trước khi bấm Mua giá thành {gia2} (OCR {texts}) -> KHÔNG mua")
-        ctx.device.tap(45, 30)
-        ctx.sleep(sau)
-        return False
+    if gia_toi_da is not None:
+        gia2, texts = _doc_gia_da(ctx)       # chợ tự làm mới 5s/lần -> lô có thể đổi giá lúc nhập số lượng
+        if gia2 is None or gia2 > int(gia_toi_da):
+            ctx.log(f"mua đá: trước khi bấm Mua giá thành {gia2} (OCR {texts}) -> KHÔNG mua")
+            ctx.device.tap(45, 30)
+            ctx.sleep(sau)
+            return False
     _find_tap(ctx, "nut_mua.png", 5, sau, required=True)
     if _cho_qua_popup(ctx, "chuc_mung_nhan.png", timeout=10).found:
         ctx.device.tap(480, 450)             # "nhấn vào chỗ trống để đóng"
@@ -1811,7 +1815,7 @@ def quet_xu(ctx, sau=3.0):
 
 def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488),
            hoat_luc_reg=(843, 18, 80, 22), so_da_reg=(500, 348, 50, 18), hl_moi_lan=5,
-           max_vong=3, toi_da=None, gia_da_toi_da=83, sau=3.0, gia_da_tt_toi_da=82):
+           max_vong=3, toi_da=None, gia_da_toi_da=83, sau=3.0):
     """CHẾ TƠ PHIÊU VÂN: Hoạt động -> Nghề nghiệp -> Thiết Kế -> công thức Tơ Phiêu Vân-2 theo loại đá của acc
     -> mua đá VỪA ĐỦ theo hoạt lực hiện tại (OCR) -> chế tối đa (^) -> Chế Tạo.
 
@@ -1820,7 +1824,7 @@ def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488),
     toi_da: giới hạn tổng số lần chế (None = theo hoạt lực).
     gia_da_toi_da: chỉ mua đá khi giá lô rẻ nhất <= mức này (mặc định 83); đắt hơn thì chỉ chế
                    bằng đá đang có.
-    (05/11) Loại đá theo acc (accounts `da`): "trang" (mặc định) = công thức đá trắng tím, mua <= gia_da_tt_toi_da;
+    (05/11) Loại đá theo acc (accounts `da`): "trang" (mặc định) = công thức đá trắng tím, mua lô rẻ nhất KHÔNG đọc giá;
     "vang" = công thức đá vàng, mua <= gia_da_toi_da. Không tự đổi luồng. (06/11) công thức tìm theo ảnh (_chon_cong_thuc).
 
     Trong task .yaml:  - python: { func: che_to }
@@ -1871,7 +1875,7 @@ def che_to(ctx, hoat_dong_xy=(920, 31), thiet_ke_xy=(663, 488),
         ctx.log(f"che_to: hoạt lực {hl} -> chế được {lan} lần, đang có {co} đá")
         if lan > co:
             ctx.log(f"che_to: cần mua {lan - co} đá {'vàng' if da_vang else 'trắng tím'}")
-            if not _mua_da(ctx, lan - co, gia_da_toi_da if da_vang else gia_da_tt_toi_da):
+            if not _mua_da(ctx, lan - co, gia_da_toi_da if da_vang else None):   # đá trắng: không đọc giá
                 # luồng cũ: đá vàng đắt -> tự chuyển sang đá trắng tím (giờ 2 luồng độc lập, chọn theo acc)
                 # if da_vang:
                 #     ctx.variables["_het_da_vang"], da_vang = nv, False
