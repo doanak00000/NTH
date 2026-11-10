@@ -418,6 +418,9 @@ Task duy nhất: `tasks/thanh_nhai_thu_6acc.yaml` (`repeat: 0`). Trên UI: tick 
   ~10 lần/nhân vật). Giờ chỉ dò lại khi màn hình đổi rõ (`_man_doi`: lệch > 5; đứng yên ~1–2, popup bật > 10).
 - (20/10) `doi_tk_zing` dò `vao_server` 1 lần trượt trên màn server → tưởng màn chính → bấm (918,21) = **icon đăng xuất
   Zing** → hỏng đăng nhập (maianh0000001 bị ✗ oan). Giờ chờ tối đa 8s mới kết luận là màn chính.
+- (10/11) `doi_acc` đổi nhân vật (Cài đặt -> Xác nhận) mà game **văng ra màn server / hộp VNG** (mất phiên Zing) -> trước
+  chờ 90s rồi lỗi, cứu không được, bỏ cả tk (maianh0000001 mất nv4-6). Giờ `_mat_phien` nhận ra -> `doi_tk_zing` đăng nhập
+  lại đúng tk, chọn nhân vật chưa làm từ dòng cuối.
 - (20/10) **RAM**: "máy thiếu bộ nhớ" là **commit** (RAM + pagefile) sát giới hạn (73,9/83,6 GB), không phải RAM thật.
   LDPlayer máy ảo 6GB giữ commit 29,5GB sau ~5 tiếng; **SignalRgb** (phần mềm đèn RGB) rò ~9,7GB — bấm X chỉ thu xuống
   khay, phải Exit/tắt tiến trình (tự bật cùng Windows `--silent`). vmmem (WSL/Docker) ~6GB.

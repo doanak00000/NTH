@@ -918,8 +918,22 @@ def doi_acc(ctx, slots=None, idx_var="_acc_idx",
     ctx.log(f"doi_acc: đổi sang acc kế tiếp (slot #{idx + 1} -> {sx},{sy})")
 
     # 1+2) màn chính -> mở màn CHỌN TÀI KHOẢN (hoat_dong -> cai_dat -> doi_tk -> xác nhận)
-    if not _mo_man_chon_acc(ctx, hoat_dong_xy, cai_dat, xac_nhan, doi_tk,
-                            timeout, sau_mo, sau_xac_nhan, dong_update):
+    mo = _mo_man_chon_acc(ctx, hoat_dong_xy, cai_dat, xac_nhan, doi_tk,
+                          timeout, sau_mo, sau_xac_nhan, dong_update)
+    if mo == "mat_phien":
+        # (10/11 maianh0000001) đổi nhân vật mà game văng ra màn server / form VNG (mất phiên Zing) -> đăng nhập lại
+        #  đúng tk; doi_tk_zing tự chọn nhân vật chưa làm hôm nay (dòng cuối) rồi vào game
+        from nthbot import accounts
+        acc = accounts.get(ctx.variables.get("_zing_user", "")) if zing else None
+        if not acc:
+            raise StepError("doi_acc: game văng ra màn đăng nhập")
+        ctx.log("doi_acc: game văng ra màn đăng nhập -> đăng nhập lại tk đang làm")
+        if doi_tk_zing(ctx, acc, hoat_dong_xy=hoat_dong_xy, cai_dat=cai_dat, xac_nhan=xac_nhan,
+                       tu_duoi=tu_duoi) == "het":
+            return xong_tk()
+        ctx.variables[idx_var] = idx + 1
+        return True
+    if not mo:
         return False
 
     # 3) (nếu cần) cuộn để lộ acc nằm dưới (kéo thật bằng sendevent), rồi chọn acc
@@ -2176,9 +2190,11 @@ def _mo_man_chon_acc(ctx, hoat_dong_xy=(918, 21), cai_dat="cai_dat.png",
     Luồng: mo_hoat_dong -> cai_dat -> tap(doi_tk 'Chuyển đổi nhân vật') -> xác nhận
            -> chờ tới khi hiện danh sách nhân vật.
     Nút Hoạt động dùng TOẠ ĐỘ CỐ ĐỊNH (icon hay đổi nên không tìm ảnh nữa).
-    Trả True nếu vào được màn chọn acc.
+    Trả True nếu vào được màn chọn acc; "mat_phien" nếu game đang / bị văng ra màn server hoặc form VNG.
     """
     from nthbot.engine import StepError
+    if _mat_phien(ctx):                      # làm lại bước sau khi văng: đang đứng ở màn đăng nhập sẵn
+        return "mat_phien"
     mo_hoat_dong(ctx, hoat_dong_xy)          # tự bấm lại nếu game bỏ qua; banner đóng trong lúc chờ
     if not _find_tap(ctx, cai_dat, timeout, 1.5, required=True):
         return False
@@ -2188,9 +2204,18 @@ def _mo_man_chon_acc(ctx, hoat_dong_xy=(918, 21), cai_dat="cai_dat.png",
     # chờ TỚI KHI hiện danh sách nhân vật (nút Xông Pha Giang Hồ góc phải dưới), tối đa sau_xac_nhan
     if not _cho_qua_popup(ctx, "xong_pha_giang_ho.png", timeout=sau_xac_nhan,
                           region=(600, 430, 360, 110)).found:
+        if _mat_phien(ctx):
+            return "mat_phien"
         raise StepError("doi_acc: không thấy màn chọn nhân vật")
     ctx.sleep(4)   # list còn chạy hiệu ứng ~3.5s: bấm sớm hơn thì game tự quay về chọn dòng 1 (đo 18/10)
     return True
+
+
+def _mat_phien(ctx):
+    """Đang ở màn server (Xông Pha giữa) / hộp chọn ZingID / form ZingID = mất phiên đăng nhập."""
+    scr = ctx.capture()
+    return any(ctx.find(t, region=r, screen=scr).found for t, r in
+               (("vao_server.png", (300, 380, 360, 90)), ("chon_zing_id.png", None), ("form_zing.png", None)))
 
 
 def _find_tap(ctx, image, timeout, after, required=False, confidence=None, region=None):

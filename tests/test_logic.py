@@ -772,3 +772,15 @@ if __name__ == "__main__":
         if ten.startswith("test_"):
             fn()
             print("OK", ten)
+
+
+def test_mat_phien():
+    # (10/11 maianh0000001) đổi nhân vật -> game văng ra màn server / hộp VNG: phải nhận ra để đăng nhập lại
+    from types import SimpleNamespace
+    from nthbot.vision import TemplateStore, imread_unicode, find_template
+    store = TemplateStore(os.path.join(GOC, "templates"))
+    for ten, mong in (("van_man_server.png", True), ("van_form_vng.png", True), ("che_to_da_trang.png", False)):
+        scr = imread_unicode(os.path.join(GOC, "tests", "anh", ten))
+        ctx = SimpleNamespace(capture=lambda s=scr: s, find=lambda t, region=None, screen=None:
+                              find_template(screen, store.get(t), confidence=0.85, region=region))
+        assert custom._mat_phien(ctx) is mong, ten
